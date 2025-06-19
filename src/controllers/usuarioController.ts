@@ -16,9 +16,9 @@ export const createUsuario = async (req: Request, res: Response): Promise<void> 
 };
 
 export const createUsuarioAdmin = async (req: Request, res: Response): Promise<void> => {
-  console.log('Recebida requisição para criar usuário admin');
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
+  console.log('=== Iniciando createUsuarioAdmin ===');
+  console.log('Headers recebidos:', req.headers);
+  console.log('Dados recebidos:', req.body);
   
   const { nome, cpf, departamento, ramal, email, perfil } = req.body;
   
@@ -35,8 +35,18 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
   }
   
   try {
-    console.log('Verificando se usuário já existe no Supabase Auth...');
-    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers();
+    console.log('1. Verificando se usuário já existe no Supabase Auth...');
+    const { data: existingUser, error: listError } = await supabaseAdmin.auth.admin.listUsers();
+    
+    if (listError) {
+      console.error('Erro ao listar usuários no Supabase:', listError);
+      res.status(500).json({ 
+        error: 'Erro ao verificar usuários existentes',
+        details: listError
+      });
+      return;
+    }
+    
     const userExists = existingUser?.users.some(u => u.email === email);
     
     if (userExists) {
@@ -48,7 +58,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    console.log('Criando usuário no Supabase Auth...');
+    console.log('2. Criando usuário no Supabase Auth...');
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: '12345678', // senha padrão, admin pode alterar depois
@@ -64,13 +74,13 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       return;
     }
 
-    console.log('Usuário criado com sucesso no Supabase Auth:', {
+    console.log('3. Usuário criado com sucesso no Supabase Auth:', {
       id: authData.user.id,
       email: authData.user.email
     });
 
     try {
-      console.log('Verificando se usuário já existe no banco...');
+      console.log('4. Verificando se usuário já existe no banco...');
       const existingDBUser = await pool.query(
         'SELECT * FROM usuario WHERE email = $1',
         [email]
@@ -85,13 +95,13 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
         return;
       }
 
-      console.log('Inserindo usuário no banco de dados...');
+      console.log('5. Inserindo usuário no banco de dados...');
       const result = await pool.query(
         'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
         [nome, cpf, departamento, ramal, email, perfil]
       );
       
-      console.log('Usuário inserido com sucesso no banco:', {
+      console.log('6. Usuário inserido com sucesso no banco:', {
         id: result.rows[0].id,
         email: result.rows[0].email,
         perfil: result.rows[0].perfil
