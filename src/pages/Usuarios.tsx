@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { theme } from '../styles/theme';
+import axios from 'axios';
 
 const perfis = [
   { value: 'admin', label: 'Administrador' },
@@ -9,6 +10,8 @@ const perfis = [
   { value: 'operacional', label: 'Operacional' },
 ];
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+
 const Usuarios: React.FC = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -16,9 +19,11 @@ const Usuarios: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [user, setUser] = useState<any>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data?.user));
+    supabase.auth.getSession().then(({ data }) => setToken(data.session?.access_token || null));
     fetchUsuarios();
   }, []);
 
@@ -38,42 +43,27 @@ const Usuarios: React.FC = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
-    // Cria usuário no Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-      email: form.email,
-      password: '12345678', // senha padrão, admin deve alterar depois
-      email_confirm: true
-    });
-    if (authError) {
-      setError('Erro ao criar usuário no Auth: ' + authError.message);
+    if (!token) {
+      setError('Token de autenticação não encontrado. Faça login novamente.');
       return;
     }
-    // Cria usuário na tabela usuario
-    const { error: dbError } = await supabase.from('usuario').insert([
-      {
-        nome: form.nome,
-        email: form.email,
-        perfil: form.perfil,
-        departamento: form.departamento,
-        ramal: form.ramal,
-        cpf: form.cpf
-      }
-    ]);
-    if (dbError) {
-      setError('Erro ao salvar usuário no banco: ' + dbError.message);
-      return;
+    try {
+      const response = await axios.post(
+        `${API_URL}/usuario/admin`,
+        form,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccess('Usuário cadastrado com sucesso!');
+      setForm({ nome: '', email: '', perfil: 'operacional', departamento: '', ramal: '', cpf: '' });
+      fetchUsuarios();
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Erro ao cadastrar usuário.');
     }
-    setSuccess('Usuário cadastrado com sucesso!');
-    setForm({ nome: '', email: '', perfil: 'operacional', departamento: '', ramal: '', cpf: '' });
-    fetchUsuarios();
   };
 
   // Permitir acesso apenas para admin
   if (!user) return <div>Carregando...</div>;
   if (user && user.email) {
-    // Buscar perfil do usuário logado
-    // (poderia ser otimizado via contexto global)
-    // Aqui, para simplicidade, busca direto na tabela usuario
     const usuarioLogado = usuarios.find(u => u.email === user.email);
     if (!usuarioLogado || usuarioLogado.perfil !== 'admin') {
       return <div style={{ color: 'red', padding: 32 }}>Acesso restrito ao administrador.</div>;
