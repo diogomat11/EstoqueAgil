@@ -19,13 +19,9 @@ dotenv.config();
 
 const app = express();
 
-// Configuração detalhada do CORS
+// Configuração do CORS
 app.use(cors({
-  origin: [
-    'http://localhost:5173',  // Vite dev server
-    'http://localhost:4173',  // Vite preview
-    'https://seu-dominio-de-producao.com'
-  ],
+  origin: '*', // Permite todas as origens em desenvolvimento
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
@@ -43,7 +39,16 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-// Rotas aqui
+// Rota raiz
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'online',
+    message: 'API do GestorEstoque está funcionando!',
+    version: '1.0.0'
+  });
+});
+
+// Rotas da API
 app.use('/api', healthRouter);
 app.use('/api', empresaRoutes);
 app.use('/api', filialRoutes);
@@ -57,5 +62,14 @@ app.use('/api', dashboardRoutes);
 app.use('/api', orcamentoRoutes);
 app.use('/api', pedidoCompraRoutes);
 app.use('/api', notificacaoRoutes);
+
+// Middleware de erro global
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Erro não tratado:', err);
+  res.status(500).json({
+    error: 'Erro interno do servidor',
+    message: err.message
+  });
+});
 
 export default app;
