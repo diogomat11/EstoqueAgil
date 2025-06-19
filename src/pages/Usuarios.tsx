@@ -10,7 +10,7 @@ const perfis = [
   { value: 'operacional', label: 'Operacional' },
 ];
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const Usuarios: React.FC = () => {
   const [usuarios, setUsuarios] = useState<any[]>([]);
@@ -43,20 +43,29 @@ const Usuarios: React.FC = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    
+    console.log('Dados do formulário:', form);
+    
     if (!token) {
       setError('Token de autenticação não encontrado. Faça login novamente.');
       return;
     }
+    
+    console.log('Token encontrado:', token);
+    
     try {
+      console.log('Enviando requisição para:', `${API_URL}/api/usuario/admin`);
       const response = await axios.post(
-        `${API_URL}/usuario/admin`,
+        `${API_URL}/api/usuario/admin`,
         form,
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      console.log('Resposta do servidor:', response.data);
       setSuccess('Usuário cadastrado com sucesso!');
       setForm({ nome: '', email: '', perfil: 'operacional', departamento: '', ramal: '', cpf: '' });
       fetchUsuarios();
     } catch (err: any) {
+      console.error('Erro completo:', err);
       setError(err.response?.data?.error || 'Erro ao cadastrar usuário.');
     }
   };
