@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../utils/supabaseAdmin';
+import { pool } from '../database';
 
 export const authenticateJWT = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   console.log('Verificando autenticação...');
@@ -29,6 +30,44 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
   } catch (err) {
     console.error('Erro inesperado na verificação do token:', err);
     res.status(403).json({ error: 'Erro na verificação do token', details: err });
+    return;
+  }
+};
+
+export const isAdmin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  console.log('Verificando se usuário é admin...');
+  const user = (req as any).user;
+
+  if (!user || !user.email) {
+    console.error('Usuário não encontrado no request');
+    res.status(403).json({ error: 'Usuário não autenticado' });
+    return;
+  }
+
+  try {
+    // Verificar no banco de dados se o usuário tem perfil admin
+    const result = await pool.query(
+      'SELECT perfil FROM usuario WHERE email = $1',
+      [user.email]
+    );
+
+    if (result.rows.length === 0) {
+      console.error('Usuário não encontrado no banco:', user.email);
+      res.status(403).json({ error: 'Usuário não encontrado' });
+      return;
+    }
+
+    if (result.rows[0].perfil !== 'admin') {
+      console.error('Usuário não é admin:', user.email);
+      res.status(403).json({ error: 'Acesso negado. Apenas administradores podem realizar esta ação.' });
+      return;
+    }
+
+    console.log('Usuário confirmado como admin:', user.email);
+    next();
+  } catch (err) {
+    console.error('Erro ao verificar perfil do usuário:', err);
+    res.status(500).json({ error: 'Erro ao verificar permissões do usuário' });
     return;
   }
 }; 
