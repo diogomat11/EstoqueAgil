@@ -25,17 +25,24 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       email_confirm: true
     });
     if (authError) {
-      res.status(400).json({ error: 'Erro ao criar usuário no Auth: ' + authError.message });
+      // Retorna erro detalhado do Supabase Auth
+      res.status(400).json({ error: 'Erro ao criar usuário no Auth', details: authError });
       return;
     }
-    // Cria usuário na tabela usuario
-    const result = await pool.query(
-      'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [nome, cpf, departamento, ramal, email, perfil]
-    );
-    res.status(201).json(result.rows[0]);
+    try {
+      // Cria usuário na tabela usuario
+      const result = await pool.query(
+        'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        [nome, cpf, departamento, ramal, email, perfil]
+      );
+      res.status(201).json(result.rows[0]);
+    } catch (err: any) {
+      // Retorna erro detalhado do banco
+      res.status(500).json({ error: 'Erro ao inserir no banco', details: err });
+    }
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    // Retorna erro inesperado
+    res.status(500).json({ error: 'Erro inesperado', details: err });
   }
 };
 
