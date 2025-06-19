@@ -1,15 +1,26 @@
 FROM node:18
 
+# Criar diretório da aplicação
 WORKDIR /app
 
+# Copiar arquivos de dependências
 COPY package*.json ./
+
+# Instalar dependências
 RUN npm install
 
+# Copiar código fonte
 COPY . .
 
-# Garante permissão de execução para o binário tsc
-RUN chmod +x ./node_modules/.bin/tsc
-
+# Compilar TypeScript
 RUN npx tsc -p backend/tsconfig.json
 
-CMD ["node", "backend/dist/server.js"] 
+# Configurar variáveis de ambiente
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Expor porta da aplicação
+EXPOSE 3001
+
+# Comando para iniciar a aplicação
+CMD ["node", "dist/server.js"] 

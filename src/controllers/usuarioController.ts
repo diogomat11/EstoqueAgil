@@ -19,6 +19,10 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
   console.log('=== Iniciando createUsuarioAdmin ===');
   console.log('Headers recebidos:', req.headers);
   console.log('Dados recebidos:', req.body);
+  console.log('Configuração Supabase:', {
+    url: process.env.SUPABASE_URL,
+    hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY
+  });
   
   const { nome, cpf, departamento, ramal, email, perfil } = req.body;
   
@@ -35,6 +39,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
   }
   
   try {
+    // Primeiro, verificar se o usuário já existe no Supabase Auth
     console.log('1. Verificando se usuário já existe no Supabase Auth...');
     const { data: existingUser, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     
@@ -58,11 +63,16 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       return;
     }
 
+    // Criar usuário no Supabase Auth
     console.log('2. Criando usuário no Supabase Auth...');
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password: '12345678', // senha padrão, admin pode alterar depois
-      email_confirm: true
+      password: '12345678', // senha padrão
+      email_confirm: true,
+      user_metadata: {
+        nome,
+        perfil
+      }
     });
 
     if (authError) {
@@ -80,14 +90,15 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
     });
 
     try {
-      console.log('4. Verificando se usuário já existe no banco...');
+      // Verificar se já existe no banco local
+      console.log('4. Verificando se usuário já existe no banco local...');
       const existingDBUser = await pool.query(
         'SELECT * FROM usuario WHERE email = $1',
         [email]
       );
 
       if (existingDBUser.rows.length > 0) {
-        console.error('Usuário já existe no banco:', email);
+        console.error('Usuário já existe no banco local:', email);
         res.status(400).json({ 
           error: 'Usuário já existe no banco',
           details: { message: 'Email já cadastrado no banco de dados' }
@@ -95,13 +106,14 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
         return;
       }
 
-      console.log('5. Inserindo usuário no banco de dados...');
+      // Inserir no banco local
+      console.log('5. Inserindo usuário no banco local...');
       const result = await pool.query(
         'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
         [nome, cpf, departamento, ramal, email, perfil]
       );
       
-      console.log('6. Usuário inserido com sucesso no banco:', {
+      console.log('6. Usuário inserido com sucesso no banco local:', {
         id: result.rows[0].id,
         email: result.rows[0].email,
         perfil: result.rows[0].perfil
@@ -109,7 +121,11 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       
       res.status(201).json(result.rows[0]);
     } catch (err: any) {
-      console.error('Erro ao inserir usuário no banco:', err);
+      console.error('Erro ao inserir usuário no banco local:', err);
+      // Se falhou ao inserir no banco local, remover do Supabase Auth
+      console.log('7. Removendo usuário do Supabase Auth devido a falha no banco local...');
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      
       res.status(500).json({ 
         error: 'Erro ao inserir no banco',
         details: {

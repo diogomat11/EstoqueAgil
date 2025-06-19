@@ -22,14 +22,13 @@ const app = express();
 // Configuração detalhada do CORS
 app.use(cors({
   origin: [
-    'http://localhost:5173', // Vite dev server
-    'http://localhost:4173', // Vite preview
-    'https://seu-dominio-de-producao.com' // Substitua pelo seu domínio de produção
+    'http://localhost:5173',  // Vite dev server
+    'http://localhost:4173',  // Vite preview
+    'https://seu-dominio-de-producao.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  maxAge: 86400 // Cache preflight por 24 horas
+  credentials: true
 }));
 
 // Middleware para logs de requisição
