@@ -109,7 +109,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       // Inserir no banco local
       console.log('5. Inserindo usuário no banco local...');
       const result = await pool.query(
-        'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+        'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil, ativo) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING *',
         [nome, cpf, departamento, ramal, email, perfil]
       );
       
@@ -136,20 +136,132 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       });
     }
   } catch (err: any) {
-    console.error('Erro inesperado ao criar usuário:', err);
+    console.error('Erro não tratado:', err);
     res.status(500).json({ 
-      error: 'Erro inesperado',
-      details: {
-        message: err.message,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+      error: 'Erro interno do servidor',
+      details: err.message
+    });
+  }
+};
+
+export const updateUsuario = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { nome, cpf, departamento, ramal, perfil } = req.body;
+  
+  try {
+    // Verificar se o usuário existe
+    const existingUser = await pool.query(
+      'SELECT * FROM usuario WHERE id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      res.status(404).json({ 
+        error: 'Usuário não encontrado',
+        details: { message: 'Usuário não existe no banco de dados' }
+      });
+      return;
+    }
+
+    // Atualizar usuário no banco local
+    const result = await pool.query(
+      `UPDATE usuario 
+       SET nome = $1, cpf = $2, departamento = $3, ramal = $4, perfil = $5, 
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 
+       RETURNING *`,
+      [nome, cpf, departamento, ramal, perfil, id]
+    );
+
+    // Atualizar metadados no Supabase Auth
+    const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+      existingUser.rows[0].auth_id,
+      {
+        user_metadata: {
+          nome,
+          perfil
+        }
       }
+    );
+
+    if (authError) {
+      console.error('Erro ao atualizar usuário no Supabase Auth:', authError);
+    }
+
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ 
+      error: 'Erro ao atualizar usuário',
+      details: err.message
+    });
+  }
+};
+
+export const toggleAtivoUsuario = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  
+  try {
+    // Verificar se o usuário existe
+    const existingUser = await pool.query(
+      'SELECT * FROM usuario WHERE id = $1',
+      [id]
+    );
+
+    if (existingUser.rows.length === 0) {
+      res.status(404).json({ 
+        error: 'Usuário não encontrado',
+        details: { message: 'Usuário não existe no banco de dados' }
+      });
+      return;
+    }
+
+    // Alternar o status ativo
+    const novoStatus = !existingUser.rows[0].ativo;
+
+    // Atualizar status no banco local
+    const result = await pool.query(
+      `UPDATE usuario 
+       SET ativo = $1, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 
+       RETURNING *`,
+      [novoStatus, id]
+    );
+
+    // Se estiver inativando, desabilitar no Supabase Auth também
+    if (!novoStatus && existingUser.rows[0].auth_id) {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        existingUser.rows[0].auth_id,
+        { ban_duration: '876000h' } // ~100 anos
+      );
+
+      if (authError) {
+        console.error('Erro ao desabilitar usuário no Supabase Auth:', authError);
+      }
+    }
+    // Se estiver ativando, reabilitar no Supabase Auth
+    else if (novoStatus && existingUser.rows[0].auth_id) {
+      const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
+        existingUser.rows[0].auth_id,
+        { ban_duration: null }
+      );
+
+      if (authError) {
+        console.error('Erro ao reabilitar usuário no Supabase Auth:', authError);
+      }
+    }
+
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ 
+      error: 'Erro ao alterar status do usuário',
+      details: err.message
     });
   }
 };
 
 export const getUsuarios = async (req: Request, res: Response): Promise<void> => {
   try {
-    const result = await pool.query('SELECT * FROM usuario');
+    const result = await pool.query('SELECT * FROM usuario ORDER BY nome');
     res.json(result.rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
