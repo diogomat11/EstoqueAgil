@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import {
   createItem,
-  getItems,
+  getItens,
   getItemById,
   updateItem,
   deleteItem
@@ -11,7 +11,7 @@ import { authenticateJWT } from '../middlewares/authMiddleware';
 const router = Router();
 
 router.post('/', createItem);
-router.get('/', getItems);
+router.get('/', getItens);
 router.get('/:id', getItemById);
 router.put('/:id', updateItem);
 router.delete('/:id', deleteItem);
