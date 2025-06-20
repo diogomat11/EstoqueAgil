@@ -1,12 +1,22 @@
 import { Router } from 'express';
-import { criarOrcamento, listarOrcamentosPorRequisicao, atualizarStatusOrcamento } from '../controllers/orcamentoController';
+import {
+    gerarOrcamentoFromRequisicao,
+    getOrcamentoParaCotacao,
+    salvarCotacoes,
+    atualizarStatusOrcamento,
+    processarAprovacao
+} from '../controllers/orcamentoController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
-import { authorize } from '../middlewares/authorizationMiddleware';
 
 const router = Router();
 
-router.post('/orcamento', authenticateJWT, criarOrcamento);
-router.get('/orcamento/requisicao/:requisicao_id', authenticateJWT, listarOrcamentosPorRequisicao);
-router.patch('/orcamento/:id/status', authenticateJWT, authorize(['APROVADOR', 'ADMIN']), atualizarStatusOrcamento);
+// Rota para iniciar um orçamento a partir de uma requisição
+router.post('/gerar', authenticateJWT, gerarOrcamentoFromRequisicao);
+
+// Rotas para lidar com a tela de cotação de um orçamento específico
+router.get('/:id/cotacao', authenticateJWT, getOrcamentoParaCotacao);
+router.post('/:id/cotacao', authenticateJWT, salvarCotacoes);
+router.patch('/:id/status', authenticateJWT, atualizarStatusOrcamento);
+router.post('/:id/processar_aprovacao', authenticateJWT, processarAprovacao);
 
 export default router; 

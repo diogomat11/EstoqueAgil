@@ -5,72 +5,65 @@ import { registrarMovimentacao } from './movimentacaoController';
 import { criarNotificacao } from './notificacaoController';
 
 export const criarRequisicao = async (req: Request, res: Response): Promise<void> => {
-  const { filial_id, item_id, usuario_id, quantidade, observacao } = req.body;
+  const { solicitante_id, departamento, justificativa, itens } = req.body;
+  // Itens deve ser um array: [{ item_id: 1, quantidade: 10 }, ...]
+
+  if (!solicitante_id || !itens || !Array.isArray(itens) || itens.length === 0) {
+    res.status(400).json({ error: 'Dados inválidos. Forneça solicitante e uma lista de itens.' });
+    return;
+  }
+
+  const client = await pool.connect();
 
   try {
-    // Busca o tipo do item
-    const itemResult = await pool.query(
-      'SELECT tipo_fornecedor_id FROM item_estoque WHERE id = $1',
-      [item_id]
+    await client.query('BEGIN');
+
+    // 1. Inserir na tabela principal de requisição
+    const requisicaoResult = await client.query(
+      `INSERT INTO requisicao (solicitante_id, departamento, justificativa, status)
+       VALUES ($1, $2, $3, 'AGUARDANDO_ORCAMENTO') RETURNING id`,
+      [solicitante_id, departamento, justificativa]
     );
-    if (itemResult.rowCount === 0) {
-      res.status(404).json({ error: 'Item não encontrado' });
-      return;
-    }
-    const tipoFornecedorId = itemResult.rows[0].tipo_fornecedor_id;
+    const requisicaoId = requisicaoResult.rows[0].id;
 
-    // Busca o nome do tipo
-    const tipoResult = await pool.query(
-      'SELECT nome FROM tipo_fornecedor WHERE id = $1',
-      [tipoFornecedorId]
-    );
-    const tipoNome = tipoResult.rows[0].nome;
+    // 2. Inserir cada item na tabela requisicao_itens
+    const itemInsertPromises = itens.map(item => {
+      return client.query(
+        `INSERT INTO requisicao_itens (requisicao_id, item_id, quantidade)
+         VALUES ($1, $2, $3)`,
+        [requisicaoId, item.item_id, item.quantidade]
+      );
+    });
+    await Promise.all(itemInsertPromises);
+    
+    await client.query('COMMIT');
 
-    // Define status inicial conforme regra de negócio
-    let status = 'PENDENTE';
-    if (tipoNome === 'COMODATO' || tipoNome === 'SUPERMERCADO') {
-      status = 'APROVACAO_SUPERVISOR';
-    } else {
-      status = 'ORCAMENTO';
-    }
-
-    // Insere a requisição
-    const result = await pool.query(
-      `INSERT INTO requisicao (filial_id, item_id, usuario_id, quantidade, observacao, status)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [filial_id, item_id, usuario_id, quantidade, observacao, status]
-    );
-
-    res.status(201).json(result.rows[0]);
+    res.status(201).json({ id: requisicaoId, message: 'Requisição criada com sucesso!' });
   } catch (err: any) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
   }
 };
 
 export const listarRequisicoes = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { status, usuario_id, filial_id } = req.query;
-    let query = 'SELECT * FROM requisicao WHERE 1=1';
-    const params: any[] = [];
-
-    if (status) {
-      params.push(status);
-      query += ` AND status = $${params.length}`;
+    try {
+      const result = await pool.query(`
+        SELECT 
+          r.id,
+          r.data_requisicao,
+          r.status,
+          u.nome as solicitante_nome,
+          (SELECT COUNT(*) FROM requisicao_itens ri WHERE ri.requisicao_id = r.id) as total_itens
+        FROM requisicao r
+        JOIN usuario u ON r.solicitante_id = u.id
+        ORDER BY r.data_requisicao DESC
+      `);
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
-    if (usuario_id) {
-      params.push(usuario_id);
-      query += ` AND usuario_id = $${params.length}`;
-    }
-    if (filial_id) {
-      params.push(filial_id);
-      query += ` AND filial_id = $${params.length}`;
-    }
-
-    const result = await pool.query(query, params);
-    res.json(result.rows);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
 };
 
 export const atualizarStatusRequisicao = async (req: Request, res: Response): Promise<void> => {
@@ -153,4 +146,68 @@ export const listarHistoricoRequisicao = async (req: Request, res: Response): Pr
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+};
+
+export const getRequisicaoById = async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    try {
+      const requisicaoResult = await pool.query('SELECT * FROM requisicao WHERE id = $1', [id]);
+      if (requisicaoResult.rows.length === 0) {
+        res.status(404).json({ error: 'Requisição não encontrada' });
+        return;
+      }
+      const itensResult = await pool.query(
+        `SELECT ri.quantidade, i.id as item_id, i.descricao, i.codigo 
+         FROM requisicao_itens ri
+         JOIN item_estoque i ON ri.item_id = i.id
+         WHERE ri.requisicao_id = $1`,
+        [id]
+      );
+      const response = {
+        ...requisicaoResult.rows[0],
+        itens: itensResult.rows
+      };
+      res.json(response);
+    } catch (err: any)      {
+      res.status(500).json({ error: err.message });
+    }
+};
+
+export const updateRequisicao = async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  const { filial_id, item_id, quantidade, observacao } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE requisicao 
+       SET filial_id = $1, item_id = $2, quantidade = $3, observacao = $4 
+       WHERE id = $5 AND status = 'PENDENTE'
+       RETURNING *`,
+      [filial_id, item_id, quantidade, observacao, id]
+    );
+    if (result.rows.length === 0) {
+      res.status(404).json({ error: 'Requisição não encontrada ou não pode ser editada' });
+      return;
+    }
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const deleteRequisicao = async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    // Em uma transação para garantir que a requisição e seus itens sejam removidos
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        // Itens são deletados em cascata por causa do "ON DELETE CASCADE" no DDL
+        await client.query('DELETE FROM requisicao WHERE id = $1', [id]);
+        await client.query('COMMIT');
+        res.status(204).send();
+    } catch (err: any) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
+    }
 };

@@ -242,7 +242,7 @@ export const toggleAtivoUsuario = async (req: Request, res: Response): Promise<v
     else if (novoStatus && existingUser.rows[0].auth_id) {
       const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(
         existingUser.rows[0].auth_id,
-        { ban_duration: null }
+        { ban_duration: undefined }
       );
 
       if (authError) {
