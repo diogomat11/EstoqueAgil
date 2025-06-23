@@ -2,52 +2,42 @@ import React, { useState, useEffect } from 'react';
 import api from '../lib/api';
 import { theme } from '../styles/theme';
 
-interface Fornecedor {
+interface Categoria {
   id: number;
-  nome: string;
-  cnpj: string;
-  nome_contato: string;
-  telefone: string;
-  email: string;
-  pedido_minimo?: number;
-  tipos?: string;
+  descricao: string;
 }
 
-const Fornecedores: React.FC = () => {
-  const [fornecedores, setFornecedores] = useState<Fornecedor[]>([]);
+const Categorias: React.FC = () => {
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [selectedFornecedor, setSelectedFornecedor] = useState<Fornecedor | null>(null);
-  const [formData, setFormData] = useState<Partial<Fornecedor>>({});
+  const [selectedCategoria, setSelectedCategoria] = useState<Categoria | null>(null);
+  const [formData, setFormData] = useState<Partial<Categoria>>({ descricao: '' });
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchFornecedores();
+    fetchCategorias();
   }, []);
 
-  const fetchFornecedores = async () => {
+  const fetchCategorias = async () => {
     try {
-      const response = await api.get('/fornecedores');
-      setFornecedores(response.data);
+      const response = await api.get('/categorias');
+      setCategorias(response.data);
     } catch (error) {
-      console.error('Erro ao buscar fornecedores:', error);
+      console.error('Erro ao buscar categorias:', error);
     }
   };
 
-  const handleOpenModal = (fornecedor: Fornecedor | null = null) => {
-    setSelectedFornecedor(fornecedor);
-    setFormData(fornecedor || {
-      nome: '',
-      cnpj: '',
-      nome_contato: '',
-      telefone: '',
-      email: '',
-    });
+  const handleOpenModal = (categoria: Categoria | null = null) => {
+    setSelectedCategoria(categoria);
+    setFormData(categoria || { descricao: '' });
+    setError(null);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
-    setSelectedFornecedor(null);
-    setFormData({});
+    setSelectedCategoria(null);
+    setFormData({ descricao: '' });
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,26 +47,29 @@ const Fornecedores: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     try {
-      if (selectedFornecedor) {
-        await api.put(`/fornecedores/${selectedFornecedor.id}`, formData);
+      if (selectedCategoria) {
+        await api.put(`/categorias/${selectedCategoria.id}`, formData);
       } else {
-        await api.post('/fornecedores', formData);
+        await api.post('/categorias', formData);
       }
-      fetchFornecedores();
+      fetchCategorias();
       handleCloseModal();
-    } catch (error) {
-      console.error('Erro ao salvar fornecedor:', error);
+    } catch (error: any) {
+      console.error('Erro ao salvar categoria:', error);
+      setError(error.response?.data?.error || 'Erro ao salvar categoria');
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('Tem certeza que deseja excluir este fornecedor?')) {
+    if (window.confirm('Tem certeza que deseja excluir esta categoria?')) {
       try {
-        await api.delete(`/fornecedores/${id}`);
-        fetchFornecedores();
-      } catch (error) {
-        console.error('Erro ao excluir fornecedor:', error);
+        await api.delete(`/categorias/${id}`);
+        fetchCategorias();
+      } catch (error: any) {
+        console.error('Erro ao excluir categoria:', error);
+        alert(error.response?.data?.error || 'Erro ao excluir categoria');
       }
     }
   };
@@ -84,34 +77,26 @@ const Fornecedores: React.FC = () => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Fornecedores</h1>
-        <button style={styles.button} onClick={() => handleOpenModal()}>Adicionar Fornecedor</button>
+        <h1 style={styles.title}>Categorias de Itens</h1>
+        <button style={styles.button} onClick={() => handleOpenModal()}>Adicionar Categoria</button>
       </div>
 
       <table style={styles.table}>
         <thead>
           <tr>
-            <th style={styles.th}>Nome</th>
-            <th style={styles.th}>CNPJ</th>
-            <th style={styles.th}>Contato</th>
-            <th style={styles.th}>Telefone</th>
-            <th style={styles.th}>Email</th>
+            <th style={styles.th}>Descrição</th>
             <th style={styles.th}>Ações</th>
           </tr>
         </thead>
         <tbody>
-          {fornecedores.map(fornecedor => (
-            <tr key={fornecedor.id}>
-              <td style={styles.td}>{fornecedor.nome}</td>
-              <td style={styles.td}>{fornecedor.cnpj}</td>
-              <td style={styles.td}>{fornecedor.nome_contato}</td>
-              <td style={styles.td}>{fornecedor.telefone}</td>
-              <td style={styles.td}>{fornecedor.email}</td>
+          {categorias.map(cat => (
+            <tr key={cat.id}>
+              <td style={styles.td}>{cat.descricao}</td>
               <td style={styles.td}>
-                <button 
+                <button
                     style={{...styles.actionButton, background: theme.colors.blue, display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}
-                    onClick={() => handleOpenModal(fornecedor)}
-                    title="Editar Fornecedor"
+                    onClick={() => handleOpenModal(cat)}
+                    title="Editar Categoria"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                         <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293L12.793 5.5z"/>
@@ -119,8 +104,8 @@ const Fornecedores: React.FC = () => {
                 </button>
                 <button 
                     style={{ ...styles.actionButton, ...styles.deleteButton, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} 
-                    onClick={() => handleDelete(fornecedor.id)}
-                    title="Excluir Fornecedor"
+                    onClick={() => handleDelete(cat.id)}
+                    title="Excluir Categoria"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
                         <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
@@ -136,28 +121,13 @@ const Fornecedores: React.FC = () => {
       {isModalOpen && (
         <div style={styles.modalBackdrop}>
           <div style={styles.modalContent}>
-            <h2>{selectedFornecedor ? 'Editar Fornecedor' : 'Adicionar Fornecedor'}</h2>
+            <h2>{selectedCategoria ? 'Editar Categoria' : 'Adicionar Categoria'}</h2>
             <form onSubmit={handleSubmit}>
               <div style={styles.formGroup}>
-                <label>Nome</label>
-                <input type="text" name="nome" value={formData.nome || ''} onChange={handleChange} style={styles.input} required />
+                <label>Descrição</label>
+                <input type="text" name="descricao" value={formData.descricao || ''} onChange={handleChange} style={styles.input} required />
               </div>
-              <div style={styles.formGroup}>
-                <label>CNPJ</label>
-                <input type="text" name="cnpj" value={formData.cnpj || ''} onChange={handleChange} style={styles.input} />
-              </div>
-              <div style={styles.formGroup}>
-                <label>Nome do Contato</label>
-                <input type="text" name="nome_contato" value={formData.nome_contato || ''} onChange={handleChange} style={styles.input} />
-              </div>
-              <div style={styles.formGroup}>
-                <label>Telefone</label>
-                <input type="text" name="telefone" value={formData.telefone || ''} onChange={handleChange} style={styles.input} />
-              </div>
-              <div style={styles.formGroup}>
-                <label>Email</label>
-                <input type="email" name="email" value={formData.email || ''} onChange={handleChange} style={styles.input} />
-              </div>
+              {error && <p style={{ color: 'red' }}>{error}</p>}
               <div style={styles.modalActions}>
                 <button type="submit" style={styles.button}>Salvar</button>
                 <button type="button" style={{ ...styles.button, ...styles.cancelButton }} onClick={handleCloseModal}>Cancelar</button>
@@ -237,4 +207,4 @@ const styles = {
   }
 };
 
-export default Fornecedores; 
+export default Categorias; 

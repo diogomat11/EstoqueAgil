@@ -10,6 +10,13 @@ import Pedidos from './pages/Pedidos';
 import Usuarios from './pages/Usuarios';
 import Menu from './components/Menu';
 import { supabase } from './lib/supabaseClient';
+import Categorias from './pages/Categorias';
+import Negociacoes from './pages/Negociacoes';
+import PedidoDetalhes from './pages/PedidoDetalhes';
+import EntradaEstoque from './pages/EntradaEstoque';
+import Movimentacoes from './pages/Movimentacoes';
+import MovimentacaoDetalhes from './pages/MovimentacaoDetalhes';
+import MovimentarEstoque from './pages/MovimentarEstoque';
 
 const useAuth = () => {
   const [user, setUser] = React.useState<any | undefined>(undefined);
@@ -49,9 +56,16 @@ const App: React.FC = () => {
                   <Route path="requisicoes" element={<Requisicoes />} />
                   <Route path="itens" element={<Itens />} />
                   <Route path="fornecedores" element={<Fornecedores />} />
-                  <Route path="orcamentos" element={<Orcamentos />} />
-                  <Route path="pedidos" element={<Pedidos />} />
+                  <Route path="orcamentos/:id?" element={<Orcamentos />} />
+                  <Route path="pedidos" element={<ProtectedRoute><Pedidos /></ProtectedRoute>} />
+                  <Route path="pedidos/:id" element={<ProtectedRoute><PedidoDetalhes /></ProtectedRoute>} />
                   <Route path="usuarios" element={<Usuarios />} />
+                  <Route path="categorias" element={<Categorias />} />
+                  <Route path="negociacoes" element={<Negociacoes />} />
+                  <Route path="movimentacoes/entrada/:pedidoId" element={<ProtectedRoute><EntradaEstoque /></ProtectedRoute>} />
+                  <Route path="movimentacoes/:id" element={<ProtectedRoute><MovimentacaoDetalhes /></ProtectedRoute>} />
+                  <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
+                  <Route path="movimentacoes" element={<ProtectedRoute><Movimentacoes /></ProtectedRoute>} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </div>

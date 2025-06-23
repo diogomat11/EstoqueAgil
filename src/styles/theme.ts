@@ -19,5 +19,11 @@ export const theme = {
     white: '#FFFFFF',
     menu: '#3A889D',
     menuActive: '#27768B',
+    
+    // Cores para status adicionadas
+    red: '#e74c3c',
+    orange: '#e67e22',
+    yellow: '#f1c40f',
+    gray: '#7f8c8d',
   }
 }; 
