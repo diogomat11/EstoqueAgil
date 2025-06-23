@@ -1,13 +1,24 @@
 import { Router } from 'express';
-import { createFornecedor, getFornecedores, getFornecedorById, updateFornecedor, deleteFornecedor } from '../controllers/fornecedorController';
+import {
+  createFornecedor,
+  getFornecedores,
+  getFornecedorById,
+  updateFornecedor,
+  deleteFornecedor
+} from '../controllers/fornecedorController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
+import { authorize } from '../middlewares/authorizationMiddleware';
+
+console.log('[ROUTES] Carregando rotas de Fornecedores...');
 
 const router = Router();
 
-router.post('/fornecedor', authenticateJWT, createFornecedor);
-router.get('/fornecedor', authenticateJWT, getFornecedores);
-router.get('/fornecedor/:id', authenticateJWT, getFornecedorById);
-router.put('/fornecedor/:id', authenticateJWT, updateFornecedor);
-router.delete('/fornecedor/:id', authenticateJWT, deleteFornecedor);
+router.use(authenticateJWT);
+
+router.post('/', authorize(['ADMIN']), createFornecedor);
+router.get('/', getFornecedores);
+router.get('/:id', getFornecedorById);
+router.put('/:id', authorize(['ADMIN']), updateFornecedor);
+router.delete('/:id', authorize(['ADMIN']), deleteFornecedor);
 
 export default router; 

@@ -259,6 +259,26 @@ export const toggleAtivoUsuario = async (req: Request, res: Response): Promise<v
   }
 };
 
+export const getUsuarioByEmail = async (req: Request, res: Response): Promise<void> => {
+  const { email } = req.params;
+  console.log(`[AUTH_FLOW] Buscando usuário no banco de dados local com o email: ${email}`);
+  
+  try {
+    const result = await pool.query('SELECT * FROM usuario WHERE LOWER(email) = LOWER($1)', [email]);
+    
+    if (result.rows.length === 0) {
+      console.error(`[AUTH_FLOW] Usuário com email ${email} NÃO ENCONTRADO no banco de dados local.`);
+      res.status(404).json({ error: 'Usuário não encontrado' });
+    } else {
+      console.log(`[AUTH_FLOW] Usuário com email ${email} encontrado com sucesso. Perfil: ${result.rows[0].perfil}`);
+      res.json(result.rows[0]);
+    }
+  } catch (err: any) {
+    console.error(`[AUTH_FLOW] Erro no banco de dados ao buscar por email ${email}:`, err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
 export const getUsuarios = async (req: Request, res: Response): Promise<void> => {
   try {
     const result = await pool.query('SELECT * FROM usuario ORDER BY nome');

@@ -26,21 +26,10 @@ export const createItem = async (req: Request, res: Response): Promise<void> => 
 
 export const getItens = async (req: Request, res: Response): Promise<void> => {
   try {
-    const query = `
-      SELECT 
-        ie.*, 
-        c.descricao as categoria_nome,
-        f.nome as fornecedor_nome
-      FROM 
-        item_estoque ie
-      LEFT JOIN 
-        categoria c ON ie.categoria_id = c.id
-      LEFT JOIN 
-        fornecedor f ON ie.fornecedor_id = f.id
-      ORDER BY 
-        ie.descricao;
-    `;
+    // Consulta simplificada para teste
+    const query = `SELECT * FROM item_estoque ORDER BY descricao;`;
     const result = await pool.query(query);
+    console.log(`[DEBUG] Itens encontrados no banco: ${result.rowCount}`); // Adicionando log para depuração
     res.json(result.rows);
   } catch (err: any) {
     console.error('Erro ao buscar itens:', err);

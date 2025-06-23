@@ -13,7 +13,7 @@ export const pool = new Pool({
   ssl: { rejectUnauthorized: false },
   max: 20, // máximo de conexões no pool
   idleTimeoutMillis: 30000, // tempo máximo que uma conexão pode ficar inativa
-  connectionTimeoutMillis: 2000 // tempo máximo para estabelecer uma conexão
+  connectionTimeoutMillis: 10000 // tempo máximo para estabelecer uma conexão
 });
 
 // Teste inicial da conexão

@@ -15,6 +15,8 @@ import movimentacaoRoutes from './routes/movimentacaoRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import pedidoCompraRoutes from './routes/pedidoCompraRoutes';
 import notificacaoRoutes from './routes/notificacaoRoutes';
+import filialRoutes from './routes/filialRoutes';
+import auditoriaRoutes from './routes/auditoriaRoutes';
 
 dotenv.config();
 
@@ -28,16 +30,20 @@ app.use('/health', healthRoutes);
 app.use('/api/usuarios', usuarioRoutes);
 app.use('/api/fornecedores', fornecedorRoutes);
 app.use('/api/import', importRoutes);
-app.use('/api/requisicao', requisicaoRoutes);
-app.use('/api/orcamento', orcamentoRoutes);
+app.use('/api/requisicoes', requisicaoRoutes);
+app.use('/api/orcamentos', orcamentoRoutes);
 app.use('/api/item_estoque', itemEstoqueRoutes);
+
+console.log('[ROUTES] Carregando rotas de Categorias...');
 app.use('/api/categorias', categoriaRoutes);
+
 app.use('/api/negociacoes', negociacaoRoutes);
 app.use('/api/movimentacoes', movimentacaoRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/pedidos', pedidoCompraRoutes);
 app.use('/api/notificacoes', notificacaoRoutes);
-
+app.use('/api/filiais', filialRoutes);
+app.use('/api/auditoria', auditoriaRoutes);
 
 app.get('/', (req, res) => {
   res.send('Estoque Agil API is running!');

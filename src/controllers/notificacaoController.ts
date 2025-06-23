@@ -1,11 +1,22 @@
 import { Request, Response } from 'express';
 import { pool } from '../database';
+import { PoolClient } from 'pg';
 
-// Criar notificação (uso interno)
-export const criarNotificacao = async (usuario_id: number, mensagem: string) => {
-  await pool.query(
+// Criar notificação (uso interno, pode ser parte de uma transação)
+export const criarNotificacao = async (
+  dbClient: PoolClient, // Usa o client da transação
+  usuario_id: number,
+  titulo: string,
+  mensagem: string,
+  link?: string
+) => {
+  // O ideal seria ter colunas 'titulo' e 'link' na tabela.
+  // Como fallback, vamos combinar tudo na mensagem.
+  const fullMessage = `${titulo}: ${mensagem}${link ? ` (Acesse: ${link})` : ''}`;
+
+  await dbClient.query(
     'INSERT INTO notificacao (usuario_id, mensagem) VALUES ($1, $2)',
-    [usuario_id, mensagem]
+    [usuario_id, fullMessage]
   );
 };
 

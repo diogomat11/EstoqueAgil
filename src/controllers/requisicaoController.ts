@@ -1,53 +1,69 @@
 import { Request, Response } from 'express';
 import { pool } from '../database';
 import { registrarAuditoria } from '../utils/auditoria';
-import { registrarMovimentacao } from './movimentacaoController';
 import { criarNotificacao } from './notificacaoController';
 
 export const criarRequisicao = async (req: Request, res: Response): Promise<void> => {
-  const { solicitante_id, departamento, justificativa, itens } = req.body;
+  console.log('[LOG] Iniciando criarRequisicao');
+  console.log('[LOG] Corpo da requisição (req.body):', JSON.stringify(req.body, null, 2));
+
+  const { solicitante_id, filial_id, departamento, justificativa, itens } = req.body;
   // Itens deve ser um array: [{ item_id: 1, quantidade: 10 }, ...]
 
-  if (!solicitante_id || !itens || !Array.isArray(itens) || itens.length === 0) {
-    res.status(400).json({ error: 'Dados inválidos. Forneça solicitante e uma lista de itens.' });
+  console.log(`[LOG] Dados recebidos: solicitante_id=${solicitante_id}, filial_id=${filial_id}, departamento=${departamento}`);
+
+  if (!solicitante_id || !filial_id || !itens || !Array.isArray(itens) || itens.length === 0) {
+    console.error('[ERRO] Validação falhou: Dados de entrada inválidos.');
+    res.status(400).json({ error: 'Dados inválidos. Forneça solicitante, filial e uma lista de itens.' });
     return;
   }
 
   const client = await pool.connect();
+  console.log('[LOG] Conexão com o banco de dados obtida.');
 
   try {
     await client.query('BEGIN');
+    console.log('[LOG] Transação iniciada (BEGIN).');
 
     // 1. Inserir na tabela principal de requisição
+    console.log('[LOG] Inserindo na tabela requisicao...');
     const requisicaoResult = await client.query(
-      `INSERT INTO requisicao (solicitante_id, departamento, justificativa, status)
-       VALUES ($1, $2, $3, 'AGUARDANDO_ORCAMENTO') RETURNING id`,
-      [solicitante_id, departamento, justificativa]
+      `INSERT INTO requisicao (solicitante_id, filial_id, departamento, justificativa, status)
+       VALUES ($1, $2, $3, $4, 'PENDENTE') RETURNING id`,
+      [solicitante_id, filial_id, departamento, justificativa]
     );
     const requisicaoId = requisicaoResult.rows[0].id;
+    console.log(`[LOG] Requisição principal inserida com sucesso. ID: ${requisicaoId}`);
 
     // 2. Inserir cada item na tabela requisicao_itens
+    console.log(`[LOG] Inserindo ${itens.length} item(ns) na tabela requisicao_itens...`);
     const itemInsertPromises = itens.map(item => {
+      console.log(`[LOG] -> Preparando para inserir item_id: ${item.item_id}, quantidade: ${item.quantidade}`);
       return client.query(
-        `INSERT INTO requisicao_itens (requisicao_id, item_id, quantidade)
+        `INSERT INTO requisicao_itens (requisicao_id, item_estoque_id, quantidade)
          VALUES ($1, $2, $3)`,
         [requisicaoId, item.item_id, item.quantidade]
       );
     });
     await Promise.all(itemInsertPromises);
+    console.log('[LOG] Todos os itens inseridos com sucesso.');
     
     await client.query('COMMIT');
+    console.log('[LOG] Transação concluída (COMMIT).');
 
     res.status(201).json({ id: requisicaoId, message: 'Requisição criada com sucesso!' });
   } catch (err: any) {
     await client.query('ROLLBACK');
-    res.status(500).json({ error: err.message });
+    console.error('[ERRO] Ocorreu um erro na transação, executando ROLLBACK.');
+    console.error('[ERRO DETALHADO] Erro em criarRequisicao:', err);
+    res.status(500).json({ error: 'Falha ao criar requisição.', detail: err.message, code: err.code });
   } finally {
     client.release();
+    console.log('[LOG] Conexão com o banco de dados liberada.');
   }
 };
 
-export const listarRequisicoes = async (req: Request, res: Response): Promise<void> => {
+export const getRequisicoes = async (req: Request, res: Response): Promise<void> => {
     try {
       const result = await pool.query(`
         SELECT 
@@ -55,13 +71,16 @@ export const listarRequisicoes = async (req: Request, res: Response): Promise<vo
           r.data_requisicao,
           r.status,
           u.nome as solicitante_nome,
+          f.endereco as filial_nome,
           (SELECT COUNT(*) FROM requisicao_itens ri WHERE ri.requisicao_id = r.id) as total_itens
         FROM requisicao r
-        JOIN usuario u ON r.solicitante_id = u.id
+        LEFT JOIN usuario u ON r.solicitante_id = u.id
+        LEFT JOIN filial f ON r.filial_id = f.id
         ORDER BY r.data_requisicao DESC
       `);
       res.json(result.rows);
     } catch (err: any) {
+      console.error('[DEBUG] Erro em getRequisicoes:', err);
       res.status(500).json({ error: err.message });
     }
 };
@@ -100,28 +119,15 @@ export const atualizarStatusRequisicao = async (req: Request, res: Response): Pr
 
     // Notificar requisitante se aprovado ou reprovado
     if (['APROVADA', 'REPROVADA'].includes(status)) {
-      const reqData = await pool.query('SELECT usuario_id FROM requisicao WHERE id = $1', [id]);
+      const reqData = await pool.query('SELECT solicitante_id FROM requisicao WHERE id = $1', [id]);
       if (reqData && typeof reqData.rowCount === 'number' && reqData.rowCount > 0) {
-        await criarNotificacao(reqData.rows[0].usuario_id, `Sua requisição foi ${status === 'APROVADA' ? 'aprovada' : 'reprovada'}.`);
-      }
-    }
-
-    // Movimentação automática ao aprovar
-    if (status === 'APROVADA') {
-      // Buscar dados da requisição aprovada
-      const reqResult = await pool.query('SELECT * FROM requisicao WHERE id = $1', [id]);
-      const reqData = reqResult.rows[0];
-      if (reqData) {
-        // Chama a função de movimentação para registrar a saída do item
-        await registrarMovimentacao({
-          body: {
-            item_id: reqData.item_id,
-            quantidade: reqData.quantidade,
-            tipo: 'SAIDA',
-            requisicao_id: id
-          },
-          user: { id: usuarioAprovador }
-        } as any, { status: () => ({ json: () => null }) } as any);
+        await criarNotificacao(
+            pool as any, // Usando o pool como um client genérico
+            reqData.rows[0].solicitante_id,
+            `Atualização da Requisição #${id}`,
+            `Sua requisição foi ${status === 'APROVADA' ? 'aprovada' : 'reprovada'}.`,
+            `/requisicoes/${id}`
+        );
       }
     }
 
@@ -151,46 +157,85 @@ export const listarHistoricoRequisicao = async (req: Request, res: Response): Pr
 export const getRequisicaoById = async (req: Request, res: Response): Promise<void> => {
     const { id } = req.params;
     try {
-      const requisicaoResult = await pool.query('SELECT * FROM requisicao WHERE id = $1', [id]);
+      const requisicaoQuery = `
+        SELECT 
+          r.*, 
+          u.nome as solicitante_nome, 
+          f.endereco as filial_nome 
+        FROM requisicao r
+        LEFT JOIN usuario u ON r.solicitante_id = u.id
+        LEFT JOIN filial f ON r.filial_id = f.id
+        WHERE r.id = $1
+      `;
+      const requisicaoResult = await pool.query(requisicaoQuery, [id]);
+      
       if (requisicaoResult.rows.length === 0) {
         res.status(404).json({ error: 'Requisição não encontrada' });
         return;
       }
+
       const itensResult = await pool.query(
         `SELECT ri.quantidade, i.id as item_id, i.descricao, i.codigo 
          FROM requisicao_itens ri
-         JOIN item_estoque i ON ri.item_id = i.id
+         JOIN item_estoque i ON ri.item_estoque_id = i.id
          WHERE ri.requisicao_id = $1`,
         [id]
       );
+
       const response = {
         ...requisicaoResult.rows[0],
         itens: itensResult.rows
       };
+      
       res.json(response);
-    } catch (err: any)      {
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
 };
 
 export const updateRequisicao = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { filial_id, item_id, quantidade, observacao } = req.body;
+  const { filial_id, departamento, justificativa, itens } = req.body;
+
+  if (!filial_id || !itens || !Array.isArray(itens) || itens.length === 0) {
+    res.status(400).json({ error: 'Dados inválidos. Forneça filial e uma lista de itens.' });
+    return;
+  }
+
+  const client = await pool.connect();
+
   try {
-    const result = await pool.query(
-      `UPDATE requisicao 
-       SET filial_id = $1, item_id = $2, quantidade = $3, observacao = $4 
-       WHERE id = $5 AND status = 'PENDENTE'
-       RETURNING *`,
-      [filial_id, item_id, quantidade, observacao, id]
+    await client.query('BEGIN');
+
+    // 1. Atualiza a tabela principal de requisição
+    await client.query(
+      `UPDATE requisicao SET filial_id = $1, departamento = $2, justificativa = $3 
+       WHERE id = $4 AND status = 'PENDENTE'`,
+      [filial_id, departamento, justificativa, id]
     );
-    if (result.rows.length === 0) {
-      res.status(404).json({ error: 'Requisição não encontrada ou não pode ser editada' });
-      return;
-    }
-    res.json(result.rows[0]);
+
+    // 2. Apaga os itens antigos
+    await client.query('DELETE FROM requisicao_itens WHERE requisicao_id = $1', [id]);
+
+    // 3. Insere os novos itens
+    const itemInsertPromises = itens.map(item => {
+      return client.query(
+        `INSERT INTO requisicao_itens (requisicao_id, item_estoque_id, quantidade)
+         VALUES ($1, $2, $3)`,
+        [id, item.item_id, item.quantidade]
+      );
+    });
+    await Promise.all(itemInsertPromises);
+    
+    await client.query('COMMIT');
+
+    res.status(200).json({ id, message: 'Requisição atualizada com sucesso!' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    await client.query('ROLLBACK');
+    console.error('[DEBUG] Erro em updateRequisicao:', err);
+    res.status(500).json({ error: err.message, detail: err.detail });
+  } finally {
+    client.release();
   }
 };
 
