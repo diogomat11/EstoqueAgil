@@ -17,6 +17,7 @@ import pedidoCompraRoutes from './routes/pedidoCompraRoutes';
 import notificacaoRoutes from './routes/notificacaoRoutes';
 import filialRoutes from './routes/filialRoutes';
 import auditoriaRoutes from './routes/auditoriaRoutes';
+import demandaRoutes from './routes/demandaRoutes';
 
 dotenv.config();
 
@@ -44,6 +45,7 @@ app.use('/api/pedidos', pedidoCompraRoutes);
 app.use('/api/notificacoes', notificacaoRoutes);
 app.use('/api/filiais', filialRoutes);
 app.use('/api/auditoria', auditoriaRoutes);
+app.use('/api/demandas', demandaRoutes);
 
 app.get('/', (req, res) => {
   res.send('Estoque Agil API is running!');
