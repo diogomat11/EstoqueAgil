@@ -16,6 +16,7 @@ import PedidoDetalhes from './pages/PedidoDetalhes';
 import EntradaEstoque from './pages/EntradaEstoque';
 import Movimentacoes from './pages/Movimentacoes';
 import MovimentacaoDetalhes from './pages/MovimentacaoDetalhes';
+import DSO from './pages/DSO';
 import MovimentarEstoque from './pages/MovimentarEstoque';
 
 const useAuth = () => {
@@ -64,8 +65,9 @@ const App: React.FC = () => {
                   <Route path="negociacoes" element={<Negociacoes />} />
                   <Route path="movimentacoes/entrada/:pedidoId" element={<ProtectedRoute><EntradaEstoque /></ProtectedRoute>} />
                   <Route path="movimentacoes/:id" element={<ProtectedRoute><MovimentacaoDetalhes /></ProtectedRoute>} />
-                  <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
                   <Route path="movimentacoes" element={<ProtectedRoute><Movimentacoes /></ProtectedRoute>} />
+                  <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
+                  <Route path="dso" element={<DSO />} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </div>

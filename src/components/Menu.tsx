@@ -15,6 +15,7 @@ const menuItems = [
   { label: 'Negociações', path: '/negociacoes' },
   { label: 'Movimentações', path: '/movimentacoes' },
   { label: 'Usuários', path: '/usuarios' },
+  { label: 'DSO', path: '/dso' },
 ];
 
 const Menu: React.FC = () => {
