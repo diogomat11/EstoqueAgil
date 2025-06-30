@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { theme } from '../styles/theme';
 import { FaExclamationTriangle } from 'react-icons/fa';
+import Select from 'react-select';
 
 // Componente Tooltip que já usamos
 const Tooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
@@ -34,6 +35,8 @@ interface PedidoData {
     valor_total: string;
 }
 
+interface FilialOption { value:number; label:string; }
+
 // Estados para os valores recebidos
 type EntradaState = {
     [key: number]: number | string;
@@ -53,6 +56,9 @@ const EntradaEstoque: React.FC = () => {
     const [nfNumero, setNfNumero] = useState('');
     const [nfChaveAcesso, setNfChaveAcesso] = useState('');
     const [nfDataEmissao, setNfDataEmissao] = useState('');
+
+    const [filiais,setFiliais] = useState<FilialOption[]>([]);
+    const [filialId,setFilialId] = useState<number|null>(null);
 
     useEffect(() => {
         const fetchPedidoParaEntrada = async () => {
@@ -77,6 +83,10 @@ const EntradaEstoque: React.FC = () => {
         };
         fetchPedidoParaEntrada();
     }, [pedidoId]);
+
+    useEffect(()=>{
+        api.get('/filiais').then(r=>setFiliais(r.data.map((f:any)=>({value:f.id,label:f.endereco||f.nome})))).catch(()=>{});
+    },[]);
 
     const handleValueChange = (
         itemId: number, 
@@ -118,6 +128,8 @@ const EntradaEstoque: React.FC = () => {
         setSubmitting(true);
         setError(null);
         
+        if(!filialId){ setError('Selecione a filial de destino'); setSubmitting(false); return; }
+
         const itens_recebidos = pedido.itens.map(item => ({
             item_estoque_id: item.item_estoque_id,
             quantidade_pedida: Number(item.quantidade),
@@ -142,6 +154,7 @@ const EntradaEstoque: React.FC = () => {
                 nf_numero: nfNumero || null,
                 nf_chave_acesso: nfChaveAcesso || null,
                 nf_data_emissao: nfDataEmissao || null,
+                filial_id: filialId,
             });
             alert(response.data.message);
             navigate('/movimentacoes'); // Redireciona para a lista de movimentações
@@ -175,6 +188,11 @@ const EntradaEstoque: React.FC = () => {
                 </div>
             </div>
             
+            <div style={{marginBottom:24}}>
+                <label style={styles.label}>Filial de Destino</label>
+                <Select options={filiais} value={filiais.find(f=>f.value===filialId)||null} onChange={o=>setFilialId(o?o.value:null)} />
+            </div>
+
             <div style={styles.nfContainer}>
                 <h2 style={styles.nfHeader}>Dados da Nota Fiscal (Opcional)</h2>
                 <div style={styles.nfFields}>

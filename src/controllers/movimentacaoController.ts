@@ -77,6 +77,16 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
                 console.log(`${logPrefix} Divergência registrada para o item ${item.item_estoque_id}.`);
             } else {
                 await client.query(`UPDATE item_estoque SET estoque_atual = estoque_atual + $1 WHERE id = $2;`, [item.quantidade_recebida, item.item_estoque_id]);
+
+                // Se filial_id foi enviado, atualizar também estoque_filial
+                if (req.body.filial_id) {
+                    await client.query(`INSERT INTO estoque_filial (filial_id, item_id, quantidade)
+                                         VALUES ($1, $2, $3)
+                                         ON CONFLICT (filial_id, item_id)
+                                         DO UPDATE SET quantidade = estoque_filial.quantidade + EXCLUDED.quantidade`,
+                                         [req.body.filial_id, item.item_estoque_id, item.quantidade_recebida]);
+                }
+
                 console.log(`${logPrefix} Item ${item.item_estoque_id} atualizado no estoque.`);
             }
         }
