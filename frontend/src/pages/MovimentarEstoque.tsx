@@ -74,6 +74,13 @@ const MovimentarEstoque: React.FC = () => {
         }
     },[itens]);
 
+    // reset destino se igual origem
+    useEffect(()=>{
+        if(filialDestino===filialOrigem){
+            setFilialDestino(null);
+        }
+    },[filialOrigem]);
+
     const addItem = ()=>{
         if(!selectedItem||quantidade<=0) return;
         const exists = listaItens.some(li=>li.item_id===selectedItem.value);
@@ -126,7 +133,7 @@ const MovimentarEstoque: React.FC = () => {
                     </div>
                     <div style={{flex:1}}>
                         <label>Filial Destino</label>
-                        <Select options={filiais} value={filiais.find(f=>f.value===filialDestino)||null} onChange={o=>setFilialDestino(o?o.value:null)} />
+                        <Select options={filiais.filter(f=>f.value!==filialOrigem)} value={filiais.find(f=>f.value===filialDestino)||null} onChange={o=>setFilialDestino(o?o.value:null)} />
                     </div>
                 </div>
             )}
