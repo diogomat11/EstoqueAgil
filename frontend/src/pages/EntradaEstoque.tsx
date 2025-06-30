@@ -57,9 +57,6 @@ const EntradaEstoque: React.FC = () => {
     const [nfChaveAcesso, setNfChaveAcesso] = useState('');
     const [nfDataEmissao, setNfDataEmissao] = useState('');
 
-    const [filiais,setFiliais] = useState<FilialOption[]>([]);
-    const [filialId,setFilialId] = useState<number|null>(null);
-
     useEffect(() => {
         const fetchPedidoParaEntrada = async () => {
             if (!pedidoId) return;
@@ -83,10 +80,6 @@ const EntradaEstoque: React.FC = () => {
         };
         fetchPedidoParaEntrada();
     }, [pedidoId]);
-
-    useEffect(()=>{
-        api.get('/filiais').then(r=>setFiliais(r.data.map((f:any)=>({value:f.id,label:f.endereco||f.nome})))).catch(()=>{});
-    },[]);
 
     const handleValueChange = (
         itemId: number, 
@@ -128,25 +121,23 @@ const EntradaEstoque: React.FC = () => {
         setSubmitting(true);
         setError(null);
         
-        if(!filialId){ setError('Selecione a filial de destino'); setSubmitting(false); return; }
-
-        const itens_recebidos = pedido.itens.map(item => ({
-            item_estoque_id: item.item_estoque_id,
-            quantidade_pedida: Number(item.quantidade),
-            valor_unitario_pedido: parseFloat(item.valor_unitario),
-            quantidade_recebida: parseFloat(String(quantidadesRecebidas[item.item_estoque_id])) || 0,
-            valor_unitario_recebido: parseFloat(String(valoresRecebidos[item.item_estoque_id])) || 0,
-        }));
-
-        // Validar se pelo menos um item foi preenchido
-        const algumItemPreenchido = Object.values(quantidadesRecebidas).some(v => v !== '') || Object.values(valoresRecebidos).some(v => v !== '');
-        if (!algumItemPreenchido) {
-             setError("Preencha a quantidade ou o valor recebido para pelo menos um item.");
-             setSubmitting(false);
-             return;
-        }
-
         try {
+            const itens_recebidos = pedido.itens.map(item => ({
+                item_estoque_id: item.item_estoque_id,
+                quantidade_pedida: Number(item.quantidade),
+                valor_unitario_pedido: parseFloat(item.valor_unitario),
+                quantidade_recebida: parseFloat(String(quantidadesRecebidas[item.item_estoque_id])) || 0,
+                valor_unitario_recebido: parseFloat(String(valoresRecebidos[item.item_estoque_id])) || 0,
+            }));
+
+            // Validar se pelo menos um item foi preenchido
+            const algumItemPreenchido = Object.values(quantidadesRecebidas).some(v => v !== '') || Object.values(valoresRecebidos).some(v => v !== '');
+            if (!algumItemPreenchido) {
+                 setError("Preencha a quantidade ou o valor recebido para pelo menos um item.");
+                 setSubmitting(false);
+                 return;
+            }
+
             const response = await api.post('/movimentacoes/entrada', {
                 pedido_compra_id: pedido.id,
                 itens_recebidos,
@@ -154,7 +145,6 @@ const EntradaEstoque: React.FC = () => {
                 nf_numero: nfNumero || null,
                 nf_chave_acesso: nfChaveAcesso || null,
                 nf_data_emissao: nfDataEmissao || null,
-                filial_id: filialId,
             });
             alert(response.data.message);
             navigate('/movimentacoes'); // Redireciona para a lista de movimentações
@@ -188,11 +178,6 @@ const EntradaEstoque: React.FC = () => {
                 </div>
             </div>
             
-            <div style={{marginBottom:24}}>
-                <label style={styles.label}>Filial de Destino</label>
-                <Select options={filiais} value={filiais.find(f=>f.value===filialId)||null} onChange={o=>setFilialId(o?o.value:null)} />
-            </div>
-
             <div style={styles.nfContainer}>
                 <h2 style={styles.nfHeader}>Dados da Nota Fiscal (Opcional)</h2>
                 <div style={styles.nfFields}>

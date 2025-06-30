@@ -39,11 +39,19 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
             throw new Error('A entrada para este pedido de compra já foi processada ou está em auditoria.');
         }
 
+        // Buscar filial vinculada ao pedido
+        const pedidoFilialRes = await pool.query('SELECT filial_id FROM pedido_compra WHERE id = $1', [pedido_compra_id]);
+        if (pedidoFilialRes.rows.length === 0) {
+            res.status(400).json({ error: 'Pedido de compra não encontrado ou sem filial associada.' });
+            return;
+        }
+        const filialPedidoId = pedidoFilialRes.rows[0].filial_id;
+
         const movQuery = `
-            INSERT INTO movimentacao_estoque (tipo, usuario_id, pedido_compra_id, observacao, status, nf_numero, nf_chave_acesso, nf_data_emissao)
-            VALUES ('ENTRADA', $1, $2, $3, 'CONCLUIDA', $4, $5, $6) RETURNING id;
+            INSERT INTO movimentacao_estoque (tipo, filial_id, usuario_id, pedido_compra_id, observacao, status, nf_numero, nf_chave_acesso, nf_data_emissao)
+            VALUES ('ENTRADA', $1, $2, $3, $4, 'CONCLUIDA', $5, $6, $7) RETURNING id;
         `;
-        const movResult = await client.query(movQuery, [usuario_id, pedido_compra_id, observacao, nf_numero, nf_chave_acesso, nf_data_emissao ? new Date(nf_data_emissao) : null]);
+        const movResult = await client.query(movQuery, [filialPedidoId, usuario_id, pedido_compra_id, observacao, nf_numero, nf_chave_acesso, nf_data_emissao ? new Date(nf_data_emissao) : null]);
         const movimentacaoId = movResult.rows[0].id;
         console.log(`${logPrefix} Cabeçalho da movimentação criado com ID: ${movimentacaoId}.`);
 
@@ -79,13 +87,11 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
                 await client.query(`UPDATE item_estoque SET estoque_atual = estoque_atual + $1 WHERE id = $2;`, [item.quantidade_recebida, item.item_estoque_id]);
 
                 // Se filial_id foi enviado, atualizar também estoque_filial
-                if (req.body.filial_id) {
-                    await client.query(`INSERT INTO estoque_filial (filial_id, item_id, quantidade)
-                                         VALUES ($1, $2, $3)
-                                         ON CONFLICT (filial_id, item_id)
-                                         DO UPDATE SET quantidade = estoque_filial.quantidade + EXCLUDED.quantidade`,
-                                         [req.body.filial_id, item.item_estoque_id, item.quantidade_recebida]);
-                }
+                await client.query(`INSERT INTO estoque_filial (filial_id, item_id, quantidade)
+                                     VALUES ($1, $2, $3)
+                                     ON CONFLICT (filial_id, item_id)
+                                     DO UPDATE SET quantidade = estoque_filial.quantidade + EXCLUDED.quantidade`,
+                                     [filialPedidoId, item.item_estoque_id, item.quantidade_recebida]);
 
                 console.log(`${logPrefix} Item ${item.item_estoque_id} atualizado no estoque.`);
             }
