@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { pool } from '../database';
 import { supabaseAdmin } from '../utils/supabaseAdmin';
+import crypto from 'crypto';
 
 export const createUsuario = async (req: Request, res: Response): Promise<void> => {
   const { nome, cpf, departamento, ramal } = req.body;
@@ -24,7 +25,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
     hasServiceKey: !!process.env.SUPABASE_SERVICE_KEY
   });
   
-  const { nome, cpf, departamento, ramal, email, perfil } = req.body;
+  const { nome, cpf, departamento, ramal, email, perfil, senha } = req.body;
   
   if (!email || !nome || !perfil) {
     console.error('Dados obrigatórios faltando:', { email, nome, perfil });
@@ -37,6 +38,8 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
     });
     return;
   }
+  
+  const senhaInicial = senha || crypto.randomBytes(4).toString('hex'); // 8 chars
   
   try {
     // Primeiro, verificar se o usuário já existe no Supabase Auth
@@ -67,7 +70,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
     console.log('2. Criando usuário no Supabase Auth...');
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password: '12345678', // senha padrão
+      password: senhaInicial,
       email_confirm: true,
       user_metadata: {
         nome,
@@ -109,8 +112,8 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
       // Inserir no banco local
       console.log('5. Inserindo usuário no banco local...');
       const result = await pool.query(
-        'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil, ativo) VALUES ($1, $2, $3, $4, $5, $6, true) RETURNING *',
-        [nome, cpf, departamento, ramal, email, perfil]
+        'INSERT INTO usuario (nome, cpf, departamento, ramal, email, perfil, ativo, mudar_senha, auth_id) VALUES ($1, $2, $3, $4, $5, $6, true, true, $7) RETURNING *',
+        [nome, cpf, departamento, ramal, email, perfil, authData.user.id]
       );
       
       console.log('6. Usuário inserido com sucesso no banco local:', {
@@ -119,7 +122,7 @@ export const createUsuarioAdmin = async (req: Request, res: Response): Promise<v
         perfil: result.rows[0].perfil
       });
       
-      res.status(201).json(result.rows[0]);
+      res.status(201).json({ ...result.rows[0], senha_inicial: senhaInicial });
     } catch (err: any) {
       console.error('Erro ao inserir usuário no banco local:', err);
       // Se falhou ao inserir no banco local, remover do Supabase Auth
@@ -283,6 +286,24 @@ export const getUsuarios = async (req: Request, res: Response): Promise<void> =>
   try {
     const result = await pool.query('SELECT * FROM usuario ORDER BY nome');
     res.json(result.rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+export const alterarSenhaUsuarioLogado = async (req: Request, res: Response): Promise<void> => {
+  const { nova_senha } = req.body;
+  const userDb = (req as any).user;
+  if (!nova_senha) {
+    res.status(400).json({ error: 'nova_senha obrigatória' });
+    return;
+  }
+  try {
+    // Atualiza senha no Supabase Auth
+    await supabaseAdmin.auth.admin.updateUserById(userDb.auth_id, { password: nova_senha });
+    // Marca mudar_senha false
+    await pool.query('UPDATE usuario SET mudar_senha = false WHERE id = $1', [userDb.id]);
+    res.json({ message: 'Senha alterada com sucesso' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

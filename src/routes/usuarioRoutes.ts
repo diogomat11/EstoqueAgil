@@ -4,7 +4,8 @@ import {
   createUsuarioAdmin, 
   updateUsuario,
   toggleAtivoUsuario,
-  getUsuarioByEmail
+  getUsuarioByEmail,
+  alterarSenhaUsuarioLogado
 } from '../controllers/usuarioController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
 import { authorize } from '../middlewares/authorizationMiddleware';
@@ -25,5 +26,7 @@ router.get('/email/:email', authenticateJWT, authorize(['ADMIN']), getUsuarioByE
 
 // Rota para obter detalhes do usuário logado (exemplo)
 // router.get('/me', authenticateJWT, getMe);
+
+router.patch('/alterar-senha', authenticateJWT, alterarSenhaUsuarioLogado);
 
 export default router; 
