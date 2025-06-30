@@ -18,6 +18,8 @@ import Movimentacoes from './pages/Movimentacoes';
 import MovimentacaoDetalhes from './pages/MovimentacaoDetalhes';
 import DSO from './pages/DSO';
 import MovimentarEstoque from './pages/MovimentarEstoque';
+import AlterarSenha from './pages/AlterarSenha';
+import api from './lib/api';
 
 const useAuth = () => {
   const [user, setUser] = React.useState<any | undefined>(undefined);
@@ -35,8 +37,15 @@ const useAuth = () => {
   return user;
 };
 
+const getLocalProfile = async (user:any)=>{
+  try{ const { data } = await api.get(`/usuarios/email/${user.email}`); return data; }catch{return null;}
+};
+
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const user = useAuth();
+  const [mustChange,setMustChange]=React.useState(false);
+  React.useEffect(()=>{ if(user){ getLocalProfile(user).then(p=>{ if(p?.mudar_senha){setMustChange(true);} });}},[user]);
+  if(mustChange && window.location.pathname!=='/alterar-senha') return <Navigate to="/alterar-senha" replace/>;
   if (user === undefined) return <div>Verificando autenticação...</div>;
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
@@ -68,6 +77,7 @@ const App: React.FC = () => {
                   <Route path="movimentacoes" element={<ProtectedRoute><Movimentacoes /></ProtectedRoute>} />
                   <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
                   <Route path="dso" element={<DSO />} />
+                  <Route path="alterar-senha" element={<AlterarSenha />} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </div>

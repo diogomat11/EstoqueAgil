@@ -25,6 +25,7 @@ const Usuarios: React.FC = () => {
     departamento: '', 
     ramal: '', 
     cpf: '',
+    senha: '',
     ativo: true 
   });
   const [error, setError] = useState('');
@@ -58,6 +59,7 @@ const Usuarios: React.FC = () => {
       departamento: '', 
       ramal: '', 
       cpf: '',
+      senha: '',
       ativo: true 
     });
     setEditingUser(null);
@@ -74,6 +76,7 @@ const Usuarios: React.FC = () => {
       departamento: usuario.departamento || '',
       ramal: usuario.ramal || '',
       cpf: usuario.cpf || '',
+      senha: usuario.senha || '',
       ativo: usuario.ativo
     });
     setEditingUser(usuario);
@@ -132,7 +135,7 @@ const Usuarios: React.FC = () => {
         }
       });
       
-      setSuccess(editingUser ? 'Usuário atualizado com sucesso!' : 'Usuário cadastrado com sucesso!');
+      setSuccess(editingUser ? 'Usuário atualizado com sucesso!' : `Usuário cadastrado! Senha: ${response.data.senha_inicial}`);
       resetForm();
       fetchUsuarios();
     } catch (err: any) {
@@ -258,6 +261,10 @@ const Usuarios: React.FC = () => {
             onChange={handleChange} 
             style={{ width: '100%', marginBottom: 8, padding: 8, borderRadius: 4, border: '1px solid #ccc' }} 
           />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{display:'block',marginBottom:4}}>Senha Inicial (opcional)</label>
+            <input name="senha" type="text" value={form.senha} onChange={handleChange} style={{width:'100%',padding:8,border:'1px solid #ccc',borderRadius:4}} />
+          </div>
           <select 
             name="perfil" 
             value={form.perfil} 
