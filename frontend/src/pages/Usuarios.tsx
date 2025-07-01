@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { theme } from '../styles/theme';
 import axios from 'axios';
+import api from '../lib/api';
 
 const perfis = [
   { value: 'admin', label: 'Administrador' },
@@ -41,9 +42,12 @@ const Usuarios: React.FC = () => {
 
   const fetchUsuarios = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('usuario').select('*').order('nome');
-    if (error) setError(error.message);
-    else setUsuarios(data || []);
+    try {
+      const { data } = await api.get('/usuarios');
+      setUsuarios(data);
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message);
+    }
     setLoading(false);
   };
 
@@ -88,17 +92,7 @@ const Usuarios: React.FC = () => {
   const handleToggleAtivo = async (usuario: any) => {
     try {
       setActionLoading(usuario.id);
-      const response = await axios.put(
-        `${API_URL}/api/usuario/${usuario.id}/toggle-ativo`,
-        {},
-        { 
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      
+      await api.put(`/usuarios/${usuario.id}/toggle-ativo`);
       setSuccess(`Usuário ${usuario.ativo ? 'inativado' : 'ativado'} com sucesso!`);
       fetchUsuarios();
     } catch (err: any) {
@@ -119,21 +113,9 @@ const Usuarios: React.FC = () => {
     }
     
     try {
-      const endpoint = editingUser 
-        ? `${API_URL}/api/usuario/${editingUser.id}` 
-        : `${API_URL}/api/usuario/admin`;
-      
-      const method = editingUser ? 'put' : 'post';
-      
-      const response = await axios({
-        method,
-        url: endpoint,
-        data: form,
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
+      const response = editingUser 
+        ? await api.put(`/usuarios/${editingUser.id}`, form)
+        : await api.post('/usuarios/admin', form);
       
       setSuccess(editingUser ? 'Usuário atualizado com sucesso!' : `Usuário cadastrado! Senha: ${response.data.senha_inicial}`);
       resetForm();

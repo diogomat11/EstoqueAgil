@@ -20,6 +20,7 @@ import DSO from './pages/DSO';
 import MovimentarEstoque from './pages/MovimentarEstoque';
 import AlterarSenha from './pages/AlterarSenha';
 import api from './lib/api';
+import EstoqueVisaoGeral from './pages/EstoqueVisaoGeral';
 
 const useAuth = () => {
   const [user, setUser] = React.useState<any | undefined>(undefined);
@@ -78,6 +79,7 @@ const App: React.FC = () => {
                   <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
                   <Route path="dso" element={<DSO />} />
                   <Route path="alterar-senha" element={<AlterarSenha />} />
+                  <Route path="estoque-visao-geral" element={<EstoqueVisaoGeral />} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </div>

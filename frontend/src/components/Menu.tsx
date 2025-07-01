@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabaseClient';
 
 const menuItems = [
   { label: 'Dashboard', path: '/dashboard' },
+  { label: 'Visão Estoque', path: '/estoque-visao-geral' },
   { label: 'Requisições', path: '/requisicoes' },
   { label: 'Itens', path: '/itens' },
   { label: 'Fornecedores', path: '/fornecedores' },

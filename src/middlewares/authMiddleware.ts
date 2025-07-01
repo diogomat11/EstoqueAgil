@@ -34,8 +34,9 @@ export const authenticateJWT = async (req: Request, res: Response, next: NextFun
       return;
     }
 
-    // 3. Anexar o usuário do *nosso banco de dados* (que contém o perfil) à requisição
-    (req as any).user = localUsers[0];
+    // 3. Anexar dados úteis à requisição
+    (req as any).user = localUsers[0]; // registro no BD local
+    (req as any).authUser = authUser;   // registro Auth do Supabase (contém id UUID)
     
     next();
   } catch (err) {
