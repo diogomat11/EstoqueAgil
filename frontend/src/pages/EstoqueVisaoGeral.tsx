@@ -96,17 +96,12 @@ const EstoqueVisaoGeral: React.FC = () => {
       {/* Placeholder gráfico consumo × compras */}
       <h3 style={{ marginTop: 40 }}>Consumo × Compras (últimos meses)</h3>
       <ResponsiveContainer width="100%" height={300}>
-        <BarChart data={[
-          { mes: 'Jan', consumo: 400, compras: 240 },
-          { mes: 'Fev', consumo: 300, compras: 139 },
-          { mes: 'Mar', consumo: 200, compras: 980 },
-        ]}>
+        <BarChart data={[] /* dados reais virão de API futura */}>
           <XAxis dataKey="mes" />
           <YAxis />
           <Tooltip />
           <Legend />
-          <Bar dataKey="consumo" fill={theme.colors.blueDark} />
-          <Bar dataKey="compras" fill={theme.colors.blueLight} />
+          {/* Sem barras enquanto não houver dados */}
         </BarChart>
       </ResponsiveContainer>
     </div>

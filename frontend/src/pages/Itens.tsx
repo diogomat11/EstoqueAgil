@@ -32,6 +32,11 @@ const Itens: React.FC = () => {
     const [selectedItem, setSelectedItem] = useState<Item | null>(null);
     const [formData, setFormData] = useState<Partial<Item>>({});
 
+    /* Filtros */
+    const [buscaTexto, setBuscaTexto] = useState('');
+    const [filtroCategoria, setFiltroCategoria] = useState<string>('');
+    const [filtroComodato, setFiltroComodato] = useState<string>('');
+
     useEffect(() => {
         const fetchItensPrincipais = async () => {
             try {
@@ -166,6 +171,34 @@ const Itens: React.FC = () => {
                 <button style={styles.button} onClick={() => handleOpenModal()}>Adicionar Item</button>
             </div>
             
+            {/* Barra de filtros */}
+            <div style={{ marginBottom: 24, padding: 16, background: '#f7fafc', borderRadius: 8 }}>
+              <h3>Filtros</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, marginBottom: 4 }}>Categoria</label>
+                  <select value={filtroCategoria} onChange={e=>setFiltroCategoria(e.target.value)} style={styles.input}>
+                    <option value="">Todas</option>
+                    {categorias.map(c=> <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, marginBottom: 4 }}>Código / Descrição</label>
+                  <input placeholder="Buscar" value={buscaTexto} onChange={e=>setBuscaTexto(e.target.value)} style={styles.input}/>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <label style={{ fontSize: 12, marginBottom: 4 }}>Comodato</label>
+                  <select value={filtroComodato} onChange={e=>setFiltroComodato(e.target.value)} style={styles.input}>
+                    <option value="">Todos</option>
+                    <option value="SIM">Sim</option>
+                    <option value="NAO">Não</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
             <table style={styles.table}>
               <thead>
                 <tr>
@@ -180,38 +213,51 @@ const Itens: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {itens.map(item => (
-                  <tr key={item.id}>
-                    <td style={styles.td}>{item.codigo}</td>
-                    <td style={styles.td}>{item.descricao}</td>
-                    <td style={styles.td}>{item.categoria_nome}</td>
-                    <td style={styles.td}>{item.estoque_atual}</td>
-                    <td style={styles.td}>R$ {Number(item.valor).toFixed(2)}</td>
-                    <td style={styles.td}>{item.fornecedor_nome}</td>
-                    <td style={styles.td}>{item.is_comodato ? 'Sim' : 'Não'}</td>
-                    <td style={styles.td}>
-                      <button
-                        style={{...styles.actionButton, background: theme.colors.blue, display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}
-                        onClick={() => handleOpenModal(item)}
-                        title="Editar Item"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                          <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293L12.793 5.5z"/>
-                        </svg>
-                      </button>
-                      <button
-                        style={{ ...styles.actionButton, ...styles.deleteButton, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                        onClick={() => handleDelete(item.id)}
-                        title="Excluir Item"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                          <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
-                          <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
-                        </svg>
-                      </button>
-                    </td>
+                {itens
+                  .filter(item => {
+                    const term = buscaTexto.toLowerCase();
+                    const matchTerm = term ? (item.descricao?.toLowerCase().includes(term) || item.codigo?.toString().toLowerCase().includes(term)) : true;
+                    const matchCategoria = filtroCategoria ? String(item.categoria_id) === filtroCategoria : true;
+                    const matchComodato = filtroComodato ? (filtroComodato === 'SIM' ? item.is_comodato : !item.is_comodato) : true;
+                    return matchTerm && matchCategoria && matchComodato;
+                  })
+                  .map(item => (
+                    <tr key={item.id}>
+                      <td style={styles.td}>{item.codigo}</td>
+                      <td style={styles.td}>{item.descricao}</td>
+                      <td style={styles.td}>{item.categoria_nome}</td>
+                      <td style={styles.td}>{item.estoque_atual}</td>
+                      <td style={styles.td}>R$ {Number(item.valor).toFixed(2)}</td>
+                      <td style={styles.td}>{item.fornecedor_nome}</td>
+                      <td style={styles.td}>{item.is_comodato ? 'Sim' : 'Não'}</td>
+                      <td style={styles.td}>
+                        <button
+                          style={{...styles.actionButton, background: theme.colors.blue, display: 'inline-flex', alignItems: 'center', justifyContent: 'center'}}
+                          onClick={() => handleOpenModal(item)}
+                          title="Editar Item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293L12.793 5.5z"/>
+                          </svg>
+                        </button>
+                        <button
+                          style={{ ...styles.actionButton, ...styles.deleteButton, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                          onClick={() => handleDelete(item.id)}
+                          title="Excluir Item"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+                            <path fillRule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+                          </svg>
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                {itens.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 24 }}>Nenhum item encontrado.</td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
 
@@ -236,7 +282,19 @@ const Itens: React.FC = () => {
                           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16}}>
                             <div style={styles.formGroup}>
                               <label>Tipo Unidade</label>
-                              <input type="text" name="tipo_unidade" value={formData.tipo_unidade || ''} onChange={handleChange} style={styles.input} />
+                              <select name="tipo_unidade" value={formData.tipo_unidade || ''} onChange={handleChange} style={styles.input}>
+                                <option value="">Selecione...</option>
+                                <option value="UN">UN</option>
+                                <option value="CX">CX</option>
+                                <option value="GL">GL</option>
+                                <option value="PCT">PCT</option>
+                                <option value="KG">KG</option>
+                                <option value="PC">PC</option>
+                                <option value="LTR">LTR</option>
+                                <option value="MT">MT</option>
+                                <option value="M2">M2</option>
+                                <option value="M3">M3</option>
+                              </select>
                             </div>
                              <div style={styles.formGroup}>
                               <label>Estoque Mínimo</label>
@@ -297,7 +355,7 @@ const Itens: React.FC = () => {
 
 const styles = {
     container: { padding: 32, fontFamily: 'Arial, sans-serif' },
-    header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 },
+    header: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24 },
     title: { color: theme.colors.blueDark, margin: 0 },
     button: {
       background: theme.colors.blue,

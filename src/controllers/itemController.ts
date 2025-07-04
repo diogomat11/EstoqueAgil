@@ -11,9 +11,32 @@ export const createItem = async (req: Request, res: Response): Promise<void> => 
     const codigoResult = await pool.query("SELECT MAX(CAST(codigo AS INTEGER)) as max_code FROM item_estoque");
     const nextCode = (codigoResult.rows[0].max_code || 0) + 1;
 
+    // === Validações de comodato ===
+    if (is_comodato && !orcamento_id) {
+      res.status(400).json({ error: 'Para itens de comodato, orcamento_id é obrigatório. Cadastre ou selecione uma negociação antes.' });
+      return;
+    }
+
+    if (is_comodato && orcamento_id) {
+      // Verifica se o orçamento existe, é do tipo NEGOCIACAO e está ativo
+      const { rows: orcRows } = await pool.query(
+        `SELECT status, tipo FROM orcamento WHERE id = $1`,
+        [orcamento_id]
+      );
+      if (orcRows.length === 0 || orcRows[0].tipo !== 'NEGOCIACAO') {
+        res.status(400).json({ error: 'orcamento_id fornecido não é uma negociação válida.' });
+        return;
+      }
+      const statusAtivo = ['AGUARDANDO_ENVIO','PEDIDO_REALIZADO','RECEBIDO'];
+      if (!statusAtivo.includes(orcRows[0].status)) {
+        res.status(400).json({ error: 'A negociação indicada não está ativa.' });
+        return;
+      }
+    }
+
     const result = await pool.query(
       `INSERT INTO item_estoque 
-       (codigo, descricao, tipo_unidade, categoria_id, is_comodato, orcamento_id, fornecedor_id, valor, validade_valor, estoque_atual, estoque_minimo) 
+       (codigo, descricao, tipo_unid, categoria_id, is_comodato, orcamento_id, fornecedor_id, valor, validade_valor, estoque_atual, estoque_minimo) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
       [String(nextCode), descricao, tipo_unidade, categoria_id, is_comodato, orcamento_id, fornecedor_id, valor, validade_valor, estoque_atual, estoque_minimo]
     );
@@ -27,7 +50,15 @@ export const createItem = async (req: Request, res: Response): Promise<void> => 
 export const getItens = async (req: Request, res: Response): Promise<void> => {
   try {
     // Consulta simplificada para teste
-    const query = `SELECT * FROM item_estoque ORDER BY descricao;`;
+    const query = `
+      SELECT ie.*, 
+             c.descricao AS categoria_nome,
+             f.nome      AS fornecedor_nome
+      FROM item_estoque ie
+      LEFT JOIN categorias c   ON c.id = ie.categoria_id
+      LEFT JOIN fornecedor f  ON f.id = ie.fornecedor_id
+      ORDER BY ie.descricao;
+    `;
     const result = await pool.query(query);
     console.log(`[DEBUG] Itens encontrados no banco: ${result.rowCount}`); // Adicionando log para depuração
     res.json(result.rows);
@@ -59,9 +90,29 @@ export const updateItem = async (req: Request, res: Response): Promise<void> => 
   } = req.body;
 
   try {
+    // === Validações de comodato ===
+    if (is_comodato && !orcamento_id) {
+      res.status(400).json({ error: 'Para itens de comodato, orcamento_id é obrigatório.' });
+      return;
+    }
+
+    if (is_comodato && orcamento_id) {
+      // verifica orçamento válido
+      const { rows: orcRows } = await pool.query(`SELECT status, tipo FROM orcamento WHERE id = $1`, [orcamento_id]);
+      if (orcRows.length === 0 || orcRows[0].tipo !== 'NEGOCIACAO') {
+        res.status(400).json({ error: 'orcamento_id fornecido não é uma negociação válida.' });
+        return;
+      }
+      const ativos = ['AGUARDANDO_ENVIO','PEDIDO_REALIZADO','RECEBIDO'];
+      if (!ativos.includes(orcRows[0].status)) {
+        res.status(400).json({ error: 'A negociação indicada não está ativa.' });
+        return;
+      }
+    }
+
     const result = await pool.query(
       `UPDATE item_estoque SET 
-       descricao = $1, tipo_unidade = $2, categoria_id = $3, is_comodato = $4, 
+       descricao = $1, tipo_unid = $2, categoria_id = $3, is_comodato = $4, 
        orcamento_id = $5, fornecedor_id = $6, valor = $7, validade_valor = $8, 
        estoque_atual = $9, estoque_minimo = $10, updated_at = CURRENT_TIMESTAMP
        WHERE id = $11 RETURNING *`,
