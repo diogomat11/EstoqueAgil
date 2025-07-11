@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { pool } from '../database';
 import { registrarAuditoria } from '../utils/auditoria';
 import { criarNotificacao } from './notificacaoController';
+import { moverDemandaEtapa, getResponsavelPorPerfil } from '../services/dsoService';
 
 // Cadastrar orçamento para uma requisição
 export const criarOrcamento = async (req: Request, res: Response) => {
@@ -87,6 +88,13 @@ export const atualizarStatusOrcamento = async (req: Request, res: Response): Pro
     }
     
     await client.query('COMMIT');
+
+    // Mover DSO se status=AGUARDANDO_APROVACAO
+    if(status==='AGUARDANDO_APROVACAO'){
+      try{
+        await moverDemandaEtapa(requisicao_id,'APROVACAO', await getResponsavelPorPerfil('SUPERVISOR'));
+      }catch(e){console.error('[DSO] mover etapa AGUARDANDO_APROVACAO',e);} }
+
     res.status(200).json({ message: 'Status atualizado com sucesso' });
 
   } catch (err: any) {
@@ -198,7 +206,9 @@ export const gerarOrcamentoFromRequisicao = async (req: Request, res: Response):
         // 1. Verifica se já não existe um orçamento para esta requisição
         console.log(`[LOG] Verificando se já existe orçamento para a requisição ${requisicao_id}...`);
         const orcamentoExistente = await client.query(
-            'SELECT id FROM orcamento WHERE requisicao_id = $1',
+            `SELECT id FROM orcamento 
+              WHERE requisicao_id = $1 AND tipo='ORCAMENTO' 
+              AND status IN ('EM_ELABORACAO','AGUARDANDO_COTACAO','AGUARDANDO_APROVACAO')`,
             [requisicao_id]
         );
 
@@ -213,12 +223,15 @@ export const gerarOrcamentoFromRequisicao = async (req: Request, res: Response):
         
         console.log('[LOG] Nenhum orçamento existente encontrado. Criando um novo...');
         // 2. Cria o novo orçamento
-        const orcamentoResult = await client.query(
+        const insertResult = await client.query(
             `INSERT INTO orcamento (requisicao_id, status, tipo) 
-             VALUES ($1, 'EM_ELABORACAO', 'ORCAMENTO') RETURNING id`,
+             VALUES ($1, 'EM_ELABORACAO', 'ORCAMENTO')
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
             [requisicao_id]
         );
-        const orcamentoId = orcamentoResult.rows[0].id;
+        const wasInserted = (insertResult.rowCount ?? 0) > 0;
+        const orcamentoId:number = wasInserted ? insertResult.rows[0].id : (await client.query(`SELECT id FROM orcamento WHERE requisicao_id=$1 AND tipo='ORCAMENTO' LIMIT 1`,[requisicao_id])).rows[0].id;
         console.log(`[LOG] Novo orçamento criado com ID: ${orcamentoId}`);
         
         // 3. Altera o status da requisição
@@ -231,6 +244,13 @@ export const gerarOrcamentoFromRequisicao = async (req: Request, res: Response):
 
         await client.query('COMMIT');
         console.log('[LOG] Transação concluída (COMMIT).');
+
+        // Atualiza DSO etapa para COTACAO após commit para evitar locks
+        try {
+          await moverDemandaEtapa(requisicao_id, 'COTACAO', null);
+        } catch(e){
+          console.error('[DSO] erro ao mover etapa pós-commit:',e);
+        }
 
         res.status(201).json({ message: 'Orçamento gerado com sucesso!', orcamento_id: orcamentoId });
     } catch (err: any) {
@@ -350,6 +370,19 @@ export const salvarCotacoes = async (req: Request, res: Response): Promise<void>
         await Promise.all(insertPromises);
 
         await client.query('COMMIT');
+
+        // Mover DSO para etapa APROVACAO (supervisor)
+        try {
+          const requisRes = await pool.query('SELECT requisicao_id FROM orcamento WHERE id=$1',[id]);
+          const requisicaoId = requisRes.rows[0]?.requisicao_id;
+          if(requisicaoId){
+             const supId = await getResponsavelPorPerfil('SUPERVISOR');
+             await moverDemandaEtapa(requisicaoId,'APROVACAO', supId);
+          }
+        } catch(err){
+          console.error('[DSO] erro mover para APROVACAO',err);
+        }
+
         res.status(200).json({ message: 'Cotações salvas com sucesso!' });
 
     } catch (err: any) {
@@ -438,6 +471,18 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
         await client.query('BEGIN');
         console.log(`${logPrefix} Transação iniciada.`);
 
+        // Verifica se o orçamento já foi aprovado anteriormente
+        const statusCheck = await client.query('SELECT status FROM orcamento WHERE id = $1', [orcamentoId]);
+        if (statusCheck.rows.length === 0) {
+            throw new Error('Orçamento não encontrado.');
+        }
+        const currentStatus: string = statusCheck.rows[0].status;
+        if (currentStatus.startsWith('APROVADO')) {
+            res.status(400).json({ error: 'Este orçamento já foi aprovado e não pode ser processado novamente.' });
+            await client.query('ROLLBACK');
+            return;
+        }
+
         // 1. Obter informações de contexto (requisição original e solicitante)
         console.log(`${logPrefix} Etapa 1: Buscando dados de contexto.`);
         const orcamentoRes = await client.query('SELECT requisicao_id FROM orcamento WHERE id = $1', [orcamentoId]);
@@ -445,9 +490,10 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
         const requisicaoOriginalId = orcamentoRes.rows[0].requisicao_id;
         console.log(`${logPrefix} Requisição original ID: ${requisicaoOriginalId}.`);
 
-        const requisicaoRes = await client.query('SELECT solicitante_id FROM requisicao WHERE id = $1', [requisicaoOriginalId]);
+        const requisicaoRes = await client.query('SELECT solicitante_id, filial_id FROM requisicao WHERE id = $1', [requisicaoOriginalId]);
         if (requisicaoRes.rows.length === 0) throw new Error('Requisição original não encontrada');
         const solicitanteOriginalId = requisicaoRes.rows[0].solicitante_id;
+        const filialOriginalId = requisicaoRes.rows[0].filial_id;
         console.log(`${logPrefix} Solicitante original ID: ${solicitanteOriginalId}.`);
 
         // 2. Separar itens aprovados e reprovados
@@ -496,27 +542,39 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
 
             console.log(`${logPrefix} Processando pedido para Fornecedor ID: ${fornecedorId} com ${itensDoFornecedor.length} itens e valor total de R$${valorTotal.toFixed(2)}.`);
 
-            // Insere o novo orçamento do tipo "PEDIDO"
-            const novoPedidoQuery = `
-                INSERT INTO orcamento (
-                    requisicao_id, 
-                    id_fornecedor, 
-                    valor_total, 
-                    aprovador_id, 
-                    data_aprovacao, 
-                    status, 
-                    tipo
-                ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'AGUARDANDO_ENVIO', 'PEDIDO')
-                RETURNING id;
-            `;
-            const novoPedidoResult = await client.query(novoPedidoQuery, [
-                requisicaoOriginalId,
-                fornecedorId,
-                valorTotal,
-                usuarioId
-            ]);
-            const novoPedidoId = novoPedidoResult.rows[0].id;
-            console.log(`${logPrefix} Novo Pedido (orçamento) criado com ID: ${novoPedidoId} para o fornecedor ${fornecedorId}.`);
+            // Verifica se já existe um pedido para este fornecedor e requisição
+            const pedidoExistente = await client.query(
+                `SELECT id FROM orcamento WHERE requisicao_id = $1 AND id_fornecedor = $2 AND tipo = 'PEDIDO'`,
+                [requisicaoOriginalId, fornecedorId]
+            );
+            let novoPedidoId: number;
+            if (pedidoExistente.rows.length > 0) {
+                novoPedidoId = pedidoExistente.rows[0].id;
+                console.log(`${logPrefix} Pedido existente reutilizado com ID: ${novoPedidoId}.`);
+            } else {
+                const novoPedidoQuery = `
+                    INSERT INTO orcamento (
+                        requisicao_id,
+                        id_fornecedor,
+                        valor_total,
+                        aprovador_id,
+                        data_aprovacao,
+                        status,
+                        tipo,
+                        filial_id
+                    ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'AGUARDANDO_ENVIO', 'PEDIDO', $5)
+                    RETURNING id;
+                `;
+                const novoPedidoResult = await client.query(novoPedidoQuery, [
+                    requisicaoOriginalId,
+                    fornecedorId,
+                    valorTotal,
+                    usuarioId,
+                    filialOriginalId
+                ]);
+                novoPedidoId = novoPedidoResult.rows[0].id;
+                console.log(`${logPrefix} Novo Pedido (orçamento) criado com ID: ${novoPedidoId} para o fornecedor ${fornecedorId}.`);
+            }
 
             // Insere os itens na tabela 'orcamento_item' para o novo pedido
             for (const item of itensDoFornecedor) {
@@ -532,30 +590,12 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
         
         // 4. Processar itens reprovados
         console.log(`${logPrefix} Etapa 4: Processando ${rejectedItems.length} itens reprovados.`);
-        let novaRequisicaoId: number | null = null;
+        // Rejeitados permanecem na mesma requisição para correção pelo orçamentista
         if (rejectedItems.length > 0) {
-            const novaReqVals = [`Itens reprovados do orçamento #${orcamentoId}.`, requisicaoOriginalId];
-            console.log(`${logPrefix} Criando nova requisição 'REPROVADO' com valores:`, novaReqVals);
-            const novaRequisicaoResult = await client.query(
-                `INSERT INTO requisicao (solicitante_id, filial_id, status, observacao, tipo)
-                 SELECT solicitante_id, filial_id, 'REPROVADO', $1, tipo
-                 FROM requisicao WHERE id = $2 RETURNING id`,
-                novaReqVals
-            );
-            
-            if (novaRequisicaoResult.rows.length === 0) throw new Error('Falha ao criar requisição para itens reprovados.');
-            novaRequisicaoId = novaRequisicaoResult.rows[0].id;
-            console.log(`${logPrefix} Nova requisição 'REPROVADO' ID ${novaRequisicaoId} criada.`);
-
             for (const item of rejectedItems) {
-                const itemOriginal = await client.query('SELECT quantidade FROM requisicao_itens WHERE requisicao_id = $1 AND item_estoque_id = $2', [requisicaoOriginalId, item.itemId]);
-                const quantidadeOriginal = itemOriginal.rows.length > 0 ? itemOriginal.rows[0].quantidade : 1;
-                const itemReprovadoVals = [novaRequisicaoId, item.itemId, quantidadeOriginal, item.justificativa];
-                console.log(`${logPrefix} Inserindo item ${item.itemId} na nova requisição ${novaRequisicaoId} com valores:`, itemReprovadoVals);
                 await client.query(
-                    `INSERT INTO requisicao_itens (requisicao_id, item_estoque_id, quantidade, justificativa_reprovacao)
-                     VALUES ($1, $2, $3, $4)`,
-                    itemReprovadoVals
+                    `UPDATE requisicao_itens SET justificativa_reprovacao = $1 WHERE requisicao_id=$2 AND item_estoque_id=$3`,
+                    [item.justificativa, requisicaoOriginalId, item.itemId]
                 );
             }
         }
@@ -567,7 +607,7 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
         console.log(`${logPrefix} Status do orçamento ${orcamentoId} -> ${finalOrcamentoStatus}`);
         
         // Se há itens aprovados, a requisição foi atendida (total ou parcialmente) e o ciclo se encerra.
-        const finalRequisicaoStatus = approvedItems.length > 0 ? 'FINALIZADA' : 'REPROVADA';
+        const finalRequisicaoStatus = rejectedItems.length > 0 ? 'AGUARDANDO_COTACAO' : 'PEDIDO';
         await client.query('UPDATE requisicao SET status = $1 WHERE id = $2', [finalRequisicaoStatus, requisicaoOriginalId]);
         console.log(`${logPrefix} Status da requisição ${requisicaoOriginalId} -> ${finalRequisicaoStatus}.`);
 
@@ -587,6 +627,19 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
         await client.query('COMMIT');
         console.log(`${logPrefix} Transação concluída com SUCESSO.`);
 
+        // Atualiza DSO conforme resultado
+        try {
+          if (rejectedItems.length > 0) {
+            const orcId = await getResponsavelPorPerfil('ORCAMENTISTA');
+            await moverDemandaEtapa(requisicaoOriginalId,'COTACAO', orcId,{restart:true,observacao:'Itens reprovados'});
+          } else {
+            const compId = await getResponsavelPorPerfil('COMPRADOR');
+            await moverDemandaEtapa(requisicaoOriginalId,'PEDIDO', compId);
+          }
+        } catch(e){
+          console.error('[DSO] erro ao mover etapa após aprovação',e);
+        }
+
         res.status(200).json({ message: 'Processo de aprovação finalizado com sucesso!' });
 
     } catch (err: any) {
@@ -596,5 +649,41 @@ export const processarAprovacao = async (req: Request, res: Response): Promise<v
     } finally {
         client.release();
         console.log(`${logPrefix} Conexão com o banco de dados liberada.`);
+    }
+};
+
+export const reverterAprovacaoPedido = async (req: Request, res: Response): Promise<void> => {
+    const { id } = req.params;
+    const usuarioId = (req as any).user?.id;
+    const client = await pool.connect();
+    const logPrefix = `[REVERTER_PEDIDO_${id}]`;
+    try {
+        await client.query('BEGIN');
+        const pedidoRes = await client.query("SELECT requisicao_id, status FROM orcamento WHERE id = $1 AND tipo = 'PEDIDO'", [id]);
+        if (pedidoRes.rows.length === 0) {
+            res.status(404).json({ error: 'Pedido de compra não encontrado.' });
+            await client.query('ROLLBACK');
+            return;
+        }
+        const { requisicao_id, status } = pedidoRes.rows[0];
+        if (status !== 'AGUARDANDO_ENVIO') {
+            res.status(400).json({ error: 'A aprovação só pode ser revertida enquanto o pedido estiver com status AGUARDANDO_ENVIO.' });
+            await client.query('ROLLBACK');
+            return;
+        }
+        // Marca o pedido como CANCELADO
+        await client.query("UPDATE orcamento SET status = 'CANCELADO' WHERE id = $1", [id]);
+        // Retorna a requisição ao estado aguardando aprovação
+        await client.query("UPDATE requisicao SET status = 'AGUARDANDO_APROVACAO' WHERE id = $1", [requisicao_id]);
+        await registrarAuditoria(usuarioId, 'REVERSAO_APROVACAO', 'orcamento', Number(id), 'Aprovação do pedido revertida antes do envio.');
+        await client.query('COMMIT');
+        console.log(`${logPrefix} Aprovação revertida com sucesso.`);
+        res.status(200).json({ message: 'Aprovação revertida com sucesso.' });
+    } catch (err: any) {
+        await client.query('ROLLBACK');
+        console.error(`${logPrefix} Falha ao reverter aprovação:`, err);
+        res.status(500).json({ error: err.message });
+    } finally {
+        client.release();
     }
 }; 

@@ -6,7 +6,8 @@ import {
   requisicoesPorUsuario,
   orcamentosPorStatus,
   orcamentosPorFornecedor,
-  orcamentosPorPeriodo
+  orcamentosPorPeriodo,
+  getKanbanCompras
 } from '../controllers/dashboardController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
 
@@ -19,5 +20,6 @@ router.get('/dashboard/requisicoes-usuario', authenticateJWT, requisicoesPorUsua
 router.get('/dashboard/orcamentos-status', authenticateJWT, orcamentosPorStatus);
 router.get('/dashboard/orcamentos-fornecedor', authenticateJWT, orcamentosPorFornecedor);
 router.get('/dashboard/orcamentos-periodo', authenticateJWT, orcamentosPorPeriodo);
+router.get('/kanban', authenticateJWT, getKanbanCompras);
 
 export default router; 

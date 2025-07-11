@@ -3,6 +3,7 @@ import api from '../lib/api';
 import { theme } from '../styles/theme';
 import Select from 'react-select';
 import { useNavigate } from 'react-router-dom';
+import { FaExclamationTriangle } from 'react-icons/fa';
 
 interface Requisicao {
   id: number;
@@ -61,6 +62,33 @@ const Requisicoes: React.FC = () => {
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [editingQuantity, setEditingQuantity] = useState<number>(1);
   const [editingRequisicaoId, setEditingRequisicaoId] = useState<number | null>(null);
+  
+  const [carregandoCriticos, setCarregandoCriticos] = useState(false);
+
+  // === Filtros ===
+  const statusOptions = [
+    { value: 'TODOS', label: 'Todos' },
+    { value: 'PENDENTE', label: 'Pendente' },
+    { value: 'AGUARDANDO_COTACAO', label: 'Cotação' },
+    { value: 'AGUARDANDO_APROVACAO', label: 'Aprovação' },
+    { value: 'PEDIDO', label: 'Pedido' },
+    { value: 'AGUARDANDO_RECEBIMENTO', label: 'Recebimento' },
+    { value: 'RECEBIDO', label: 'Recebido' },
+    { value: 'FINALIZADA', label: 'Finalizada' }
+  ];
+  const [selectedStatus, setSelectedStatus] = useState<{ value: string; label: string }>(statusOptions[0]);
+
+  const filteredRequisicoes = selectedStatus.value === 'TODOS'
+    ? requisicoes
+    : requisicoes.filter(r => r.status === selectedStatus.value);
+
+  // === Paginação ===
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const itemsPerPage = 10;
+  const indexOfLast = currentPage * itemsPerPage;
+  const indexOfFirst = indexOfLast - itemsPerPage;
+  const displayedRequisicoes = filteredRequisicoes.slice(indexOfFirst, indexOfLast);
+  const totalPages = Math.ceil(filteredRequisicoes.length / itemsPerPage);
   
   const navigate = useNavigate();
 
@@ -312,11 +340,42 @@ const Requisicoes: React.FC = () => {
     }
   };
 
+  const handleAddCriticos = async () => {
+    if(carregandoCriticos) return;
+    try{
+      setCarregandoCriticos(true);
+      const { data } = await api.get('/estoque/alertas');
+      const itensNovos:RequisicaoItem[] = [];
+      data.forEach((a:any)=>{
+         if(selectedFilial && Number(selectedFilial)!==a.filial_id) return; // considera só filial escolhida se houver
+         const falta = a.estoque_minimo - a.quantidade;
+         if(falta<=0) return;
+         if(itensRequisicao.some(it=>it.item_id===a.item_id)) return;
+         itensNovos.push({ item_id:a.item_id, codigo:a.codigo, descricao:a.descricao, quantidade: falta });
+      });
+      if(itensNovos.length===0){ alert('Sem itens críticos para adicionar.'); }
+      else setItensRequisicao(prev=>[...prev, ...itensNovos]);
+    }catch(err){ console.error('Erro ao buscar alertas',err); alert('Falha ao buscar itens críticos');}
+    finally{ setCarregandoCriticos(false);}
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>Requisições</h1>
         <button style={styles.button} onClick={handleOpenNewModal}>Nova Requisição</button>
+      </div>
+
+      {/* === Barra de filtros === */}
+      <div style={{ display: 'flex', gap: '16px', marginBottom: 24 }}>
+        <div style={{ minWidth: 200 }}>
+          <Select
+            options={statusOptions}
+            value={selectedStatus}
+            onChange={(opt) => { if(opt) { setSelectedStatus(opt); setCurrentPage(1);} }}
+            placeholder="Filtrar por status"
+          />
+        </div>
       </div>
 
       <table style={styles.table}>
@@ -335,7 +394,7 @@ const Requisicoes: React.FC = () => {
               <td colSpan={5} style={{ textAlign: 'center', padding: '16px' }}>Nenhuma requisição encontrada.</td>
             </tr>
           ) : (
-            requisicoes.map(req => (
+            displayedRequisicoes.map(req => (
               <tr key={req.id}>
                 <td style={styles.td}>{req.id}</td>
                 <td style={styles.td}>{new Date(req.data_requisicao).toLocaleDateString()}</td>
@@ -387,6 +446,16 @@ const Requisicoes: React.FC = () => {
           )}
         </tbody>
       </table>
+
+      {totalPages > 1 && (
+        <div style={styles.pagination}>
+          <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={styles.pageBtn}>Anterior</button>
+          {Array.from({length: totalPages},(_,i)=>i+1).map(pn=> (
+            <button key={pn} onClick={()=>setCurrentPage(pn)} style={pn===currentPage?styles.pageBtnActive:styles.pageBtn}>{pn}</button>
+          ))}
+          <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={styles.pageBtn}>Próxima</button>
+        </div>
+      )}
 
       {isNewModalOpen && (
         <div style={styles.modalBackdrop}>
@@ -448,7 +517,10 @@ const Requisicoes: React.FC = () => {
                     min="1"
                  />
               </div>
-              <button onClick={handleAddItem} style={styles.button}>Adicionar</button>
+              <button onClick={handleAddItem} style={{...styles.button, marginRight:8}}>Adicionar</button>
+              <button onClick={handleAddCriticos} style={{...styles.button, background:theme.colors.orange}} title="Adicionar itens com estoque crítico">
+                 {carregandoCriticos ? 'Carregando...' : <><FaExclamationTriangle/> Itens Críticos</>}
+              </button>
             </div>
 
             <div style={styles.cartList}>
@@ -662,7 +734,10 @@ const styles = {
       color: 'white',
       fontSize: 12,
       fontWeight: 'bold',
-  }
+  },
+  pagination:{ marginTop:16, display:'flex', gap:4 },
+  pageBtn:{ padding:'4px 10px', border:'1px solid #ccc', background:'#fff', cursor:'pointer' },
+  pageBtnActive:{ padding:'4px 10px', border:'1px solid', background: theme.colors.blueLight1 },
 };
 
 export default Requisicoes; 

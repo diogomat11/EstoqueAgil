@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { pool } from '../database';
 import { registrarAuditoria } from '../utils/auditoria';
 import { criarNotificacao } from './notificacaoController';
+import { moverDemandaEtapa, getResponsavelPorPerfil } from '../services/dsoService';
 
 // Lista todos os orçamentos que são, na verdade, Pedidos de Compra
 export const listarPedidos = async (req: Request, res: Response) => {
@@ -105,6 +106,30 @@ export const atualizarStatusPedido = async (req: Request, res: Response): Promis
             res.status(404).json({ error: 'Pedido não encontrado ou não pôde ser atualizado.' });
       return;
         }
+
+        // Após update
+        const requisicaoId = result.rows[0].requisicao_id;
+
+        // Manter status da requisição sincronizado
+        if(requisicaoId){
+          let novoStatusReq: string | undefined;
+          if(status === 'PEDIDO_REALIZADO') novoStatusReq = 'AGUARDANDO_RECEBIMENTO';
+          else if(status === 'RECEBIDO')    novoStatusReq = 'FINALIZADA';
+          else if(status === 'FINALIZADO')  novoStatusReq = 'FINALIZADA';
+          if(novoStatusReq){
+            await pool.query('UPDATE requisicao SET status=$1 WHERE id=$2', [novoStatusReq, requisicaoId]);
+          }
+        }
+
+        // Sincroniza DSO de acordo com o novo status do pedido
+        try {
+          if(status === 'RECEBIDO'){
+             const opId = await getResponsavelPorPerfil('OPERACIONAL');
+             await moverDemandaEtapa(requisicaoId,'RECEBIMENTO', opId);
+          } else if(status === 'FINALIZADO'){
+             await moverDemandaEtapa(requisicaoId,'CONCLUIDO', null);
+          }
+        } catch(e){ console.error('[DSO] mover etapa pedido',e);} 
 
         // TODO: Adicionar lógica de notificação aqui no futuro, se necessário
 

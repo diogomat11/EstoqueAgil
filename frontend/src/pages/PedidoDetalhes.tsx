@@ -81,15 +81,37 @@ const PedidoDetalhes: React.FC = () => {
         window.print();
     };
 
+    const handleCancelPedido = async () => {
+        if (!id) return;
+        setUpdating(true);
+        try {
+            await api.post(`/orcamentos/${id}/reverter_aprovacao`);
+            // Atualiza o status localmente para refletir a mudança imediatamente
+            if (pedido) {
+                setPedido({ ...pedido, status: 'CANCELADO' });
+            }
+        } catch (err) {
+            console.error(`Erro ao cancelar o pedido ${id}:`, err);
+            // TODO: Mostrar um toast/notificação de erro para o usuário
+        } finally {
+            setUpdating(false);
+        }
+    };
+
     const renderActionButtons = () => {
         if (!pedido) return null;
 
         switch (pedido.status) {
             case 'AGUARDANDO_ENVIO':
                 return (
-                    <button onClick={() => handleUpdateStatus('PEDIDO_REALIZADO')} disabled={updating}>
-                        {updating ? 'Atualizando...' : 'Marcar como Enviado'}
-                    </button>
+                    <>
+                        <button onClick={() => handleUpdateStatus('PEDIDO_REALIZADO')} disabled={updating} style={{marginRight:8}}>
+                            {updating ? 'Atualizando...' : 'Marcar como Enviado'}
+                        </button>
+                        <button onClick={handleCancelPedido} disabled={updating} style={{background:theme.colors.red,color:'#fff'}}>
+                            {updating ? 'Cancelando...' : 'Cancelar Pedido'}
+                        </button>
+                    </>
                 );
             case 'PEDIDO_REALIZADO':
                 return (

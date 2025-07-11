@@ -1,0 +1,2 @@
+ALTER TABLE item_estoque 
+ADD COLUMN IF NOT EXISTS validade_valor TIMESTAMPTZ;

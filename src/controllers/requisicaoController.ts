@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { pool } from '../database';
 import { registrarAuditoria } from '../utils/auditoria';
 import { criarNotificacao } from './notificacaoController';
+import { criarDemandaFluxo, moverDemandaEtapa, getResponsavelPorPerfil } from '../services/dsoService';
 
 export const criarRequisicao = async (req: Request, res: Response): Promise<void> => {
   console.log('[LOG] Iniciando criarRequisicao');
@@ -51,6 +52,13 @@ export const criarRequisicao = async (req: Request, res: Response): Promise<void
     await client.query('COMMIT');
     console.log('[LOG] Transação concluída (COMMIT).');
 
+    // Cria Demanda inicial (DSO)
+    try {
+      await criarDemandaFluxo(null, requisicaoId, 'REQUISICAO', solicitante_id);
+    } catch(e){
+      console.error('[DSO] erro ao criar demanda inicial:',e);
+    }
+
     res.status(201).json({ id: requisicaoId, message: 'Requisição criada com sucesso!' });
   } catch (err: any) {
     await client.query('ROLLBACK');
@@ -93,7 +101,7 @@ export const atualizarStatusRequisicao = async (req: Request, res: Response): Pr
 
   try {
     // Valide status permitido
-    const statusPermitidos = ['APROVADA', 'REPROVADA', 'ORCAMENTO', 'APROVACAO_SUPERVISOR', 'PENDENTE'];
+    const statusPermitidos = ['APROVADA','REPROVADA','ORCAMENTO','APROVACAO_SUPERVISOR','PENDENTE','AGUARDANDO_COTACAO','AGUARDANDO_APROVACAO','EM_ELABORACAO','PEDIDO','AGUARDANDO_RECEBIMENTO','RECEBIDO'];
     if (!statusPermitidos.includes(status)) {
       res.status(400).json({ error: 'Status inválido.' });
       return;
@@ -129,6 +137,24 @@ export const atualizarStatusRequisicao = async (req: Request, res: Response): Pr
             `/requisicoes/${id}`
         );
       }
+    }
+
+    // === Sincroniza DSO ===
+    try {
+      const etapa = status === 'AGUARDANDO_COTACAO'          ? 'COTACAO'      :
+                    status === 'AGUARDANDO_APROVACAO'        ? 'APROVACAO'    :
+                    status === 'PEDIDO' || status === 'AGUARDANDO_RECEBIMENTO' ? 'PEDIDO' :
+                    status === 'RECEBIDO'                 ? 'RECEBIMENTO' :
+                    status === 'FINALIZADA'                  ? 'CONCLUIDO'    :
+                    'REQUISICAO';
+      let respId: number | null = null;
+      if (etapa === 'COTACAO')        respId = await getResponsavelPorPerfil('ORCAMENTISTA');
+      if (etapa === 'APROVACAO')      respId = await getResponsavelPorPerfil('SUPERVISOR');
+      if (etapa === 'PEDIDO')         respId = await getResponsavelPorPerfil('COMPRADOR');
+      if (etapa === 'RECEBIMENTO')    respId = await getResponsavelPorPerfil('OPERACIONAL');
+      await moverDemandaEtapa(Number(id), etapa, respId);
+    } catch(e){
+      console.error('[DSO] erro sincronizar etapa requisicao', e);
     }
 
     res.json(result.rows[0]);
@@ -182,9 +208,20 @@ export const getRequisicaoById = async (req: Request, res: Response): Promise<vo
         [id]
       );
 
+      const historicoResult = await pool.query(
+        `SELECT dh.*, u.nome as usuario_nome
+           FROM demanda_historico dh
+           LEFT JOIN usuario u ON u.id = dh.usuario_id
+           JOIN demanda d ON d.id = dh.demanda_id
+          WHERE d.requisicao_id = $1
+          ORDER BY dh.data ASC`,
+        [id]
+      );
+
       const response = {
         ...requisicaoResult.rows[0],
-        itens: itensResult.rows
+        itens: itensResult.rows,
+        demanda_historico: historicoResult.rows
       };
       
       res.json(response);
@@ -255,4 +292,21 @@ export const deleteRequisicao = async (req: Request, res: Response): Promise<voi
     } finally {
         client.release();
     }
+};
+
+const etapaDest=(s:string)=>{
+  if(s==='AGUARDANDO_COTACAO')         return 'COTACAO';
+  if(s==='AGUARDANDO_APROVACAO')       return 'APROVACAO';
+  if(s==='PEDIDO' || s==='AGUARDANDO_RECEBIMENTO') return 'PEDIDO';
+  if(s==='RECEBIDO')                  return 'RECEBIMENTO';
+  if(s==='FINALIZADA')                return 'CONCLUIDO';
+  return 'REQUISICAO';
+};
+
+const perfilResponsavel=async (s:string)=>{
+  if(s==='AGUARDANDO_COTACAO')   return getResponsavelPorPerfil('ORCAMENTISTA');
+  if(s==='AGUARDANDO_APROVACAO') return getResponsavelPorPerfil('SUPERVISOR');
+  if(s==='PEDIDO' || s==='AGUARDANDO_RECEBIMENTO') return getResponsavelPorPerfil('COMPRADOR');
+  if(s==='RECEBIDO')             return getResponsavelPorPerfil('OPERACIONAL');
+  return null;
 };

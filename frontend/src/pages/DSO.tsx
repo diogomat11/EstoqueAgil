@@ -12,8 +12,12 @@ interface Demanda {
   nome: string;
   descricao: string;
   data_cadastro: string;
+  created_at: string;
+  updated_at: string;
   prazo_conclusao: string | null;
   tipo: string;
+  etapa?: string;
+  requisicao_id?: number;
   responsaveis: { id: number; nome: string }[] | null;
 }
 
@@ -30,6 +34,7 @@ const DSO: React.FC = () => {
   });
   const [error, setError] = useState<string | null>(null);
   const [selectedDemanda, setSelectedDemanda] = useState<Demanda | null>(null);
+  const [modalRequisicao, setModalRequisicao] = useState<any|null>(null);
 
   useEffect(() => {
     fetchDemandas();
@@ -103,6 +108,26 @@ const DSO: React.FC = () => {
 
   const expiringCount = demandas.filter(d => isExpiringSoon(d.prazo_conclusao)).length;
 
+  const handleViewReq = async (d: Demanda) => {
+    if(!d.requisicao_id) return;
+    try {
+      const { data } = await api.get(`/requisicoes/${d.requisicao_id}`);
+      setModalRequisicao(data);
+    } catch(err){
+      console.error('erro requisicao detalhes',err);
+    }
+  };
+
+  const calcTempo = (d:Demanda) => {
+    const inicio = new Date(d.created_at || d.data_cadastro);
+    const fim = d.status==='ENCERRADO' ? new Date(d.updated_at) : new Date();
+    const diff = fim.getTime()-inicio.getTime();
+    const horas = Math.floor(diff/36e5);
+    const dias = Math.floor(horas/24);
+    if(dias>0) return `${dias}d ${horas%24}h`;
+    return `${horas}h`;
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -123,6 +148,7 @@ const DSO: React.FC = () => {
             <th style={styles.th}>Descrição</th>
             <th style={styles.th}>Tipo</th>
             <th style={styles.th}>Prazo</th>
+            <th style={styles.th}>Tempo na atividade</th>
             <th style={styles.th}>Responsáveis</th>
             <th style={styles.th}>Ações</th>
           </tr>
@@ -134,8 +160,10 @@ const DSO: React.FC = () => {
               <td style={styles.td}>{d.descricao}</td>
               <td style={styles.td}>{d.tipo}</td>
               <td style={styles.td}>{d.prazo_conclusao ? new Date(d.prazo_conclusao).toLocaleDateString() : '-'}</td>
+              <td style={styles.td}>{calcTempo(d)}</td>
               <td style={styles.td}>{d.responsaveis && Array.isArray(d.responsaveis) ? d.responsaveis.filter(r => r && r.nome).map(r => r.nome).join(', ') : '-'}</td>
               <td style={styles.td}>
+                <button style={{ ...styles.actionButton, background: theme.colors.blue }} title="Ver Requisição" onClick={()=>handleViewReq(d)}>👁️</button>
                 <button
                   style={{ ...styles.actionButton, background: theme.colors.blue }}
                   onClick={() => handleEdit(d)}
@@ -186,6 +214,10 @@ const DSO: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {modalRequisicao && (
+        <RequisicaoModal data={modalRequisicao} onClose={()=>setModalRequisicao(null)} />
       )}
     </div>
   );

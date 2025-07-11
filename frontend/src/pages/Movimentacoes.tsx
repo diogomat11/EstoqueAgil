@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { theme } from '../styles/theme';
 import { FaSearch } from 'react-icons/fa';
+import Select from 'react-select'; // Added missing import for Select
 
 interface Movimentacao {
     id: number;
@@ -18,7 +19,33 @@ const Movimentacoes: React.FC = () => {
     const [movimentacoes, setMovimentacoes] = useState<Movimentacao[]>([]);
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
+
+    // === Filtros ===
+    const tipoOptions = [
+        { value: 'TODOS', label: 'Todos os Tipos' },
+        { value: 'ENTRADA', label: 'Entrada' },
+        { value: 'SAIDA',   label: 'Saída' }
+    ];
+    const statusOptions = [
+        { value: 'TODOS', label: 'Todos os Status' },
+        { value: 'CONCLUIDA', label: 'Concluída' },
+        { value: 'PENDENTE_AUDITORIA', label: 'Pendente Auditoria' },
+        { value: 'CONCLUIDA_PARCIALMENTE', label: 'Parcialmente Concluída' },
+        { value: 'CANCELADA', label: 'Cancelada' }
+    ];
+    const [selectedTipo, setSelectedTipo] = useState<{ value:string; label:string }>(tipoOptions[0]);
+    const [selectedStatus, setSelectedStatus] = useState<{ value:string; label:string }>(statusOptions[0]);
     const navigate = useNavigate();
+
+    // Se rota /auditoria, define filtro inicial
+    useEffect(()=>{
+        if(window.location.pathname.startsWith('/auditoria')){
+            // Seleciona ambos pendentes (pendente e parcial)
+            const pendOpt = statusOptions.find(o=>o.value==='PENDENTE_AUDITORIA');
+            if(pendOpt) setSelectedStatus(pendOpt);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    },[]);
 
     useEffect(() => {
         const fetchMovimentacoes = async () => {
@@ -38,6 +65,20 @@ const Movimentacoes: React.FC = () => {
 
         fetchMovimentacoes();
     }, []);
+
+    const isAuditoriaRoute = window.location.pathname.startsWith('/auditoria');
+
+    const filteredMovimentacoes = movimentacoes.filter(mov => {
+        const matchesTipo = selectedTipo.value === 'TODOS' || mov.tipo_movimentacao === selectedTipo.value;
+        const matchesStatus = selectedStatus.value === 'TODOS' || mov.status === selectedStatus.value;
+
+        // Na rota auditoria, exibimos apenas movimentações com pendências
+        if (isAuditoriaRoute) {
+            const pendente = mov.status === 'PENDENTE_AUDITORIA' || mov.status === 'CONCLUIDA_PARCIALMENTE';
+            return pendente && matchesTipo && matchesStatus;
+        }
+        return matchesTipo && matchesStatus;
+    });
 
     const handleNavigate = (id: number) => {
         navigate(`/movimentacoes/${id}`);
@@ -79,7 +120,27 @@ const Movimentacoes: React.FC = () => {
 
     return (
         <div style={{ padding: 32 }}>
+            {/* === Barra de filtros === */}
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ minWidth: 200 }}>
+                    <Select
+                        options={tipoOptions}
+                        value={selectedTipo}
+                        onChange={(opt)=>{ if(opt){ setSelectedTipo(opt);} }}
+                        placeholder="Filtrar Tipo"
+                    />
+                </div>
+                <div style={{ minWidth: 220 }}>
+                    <Select
+                        options={statusOptions}
+                        value={selectedStatus}
+                        onChange={(opt)=>{ if(opt){ setSelectedStatus(opt);} }}
+                        placeholder="Filtrar Status"
+                    />
+                </div>
+            </div>
             <h1 style={{ color: theme.colors.blueDark, marginBottom: 24 }}>Histórico de Movimentações</h1>
+            {!window.location.pathname.startsWith('/auditoria') && (
             <button style={{
                 padding: '8px 16px',
                 border: 'none',
@@ -93,6 +154,7 @@ const Movimentacoes: React.FC = () => {
                 backgroundColor: theme.colors.blue,
                 marginBottom: 24
             }} onClick={() => navigate('/movimentacoes/movimentar')}>Movimentar Estoque</button>
+            )}
             
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead style={{ background: theme.colors.blueDark, color: 'white' }}>
@@ -108,8 +170,8 @@ const Movimentacoes: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {movimentacoes.length > 0 ? (
-                        movimentacoes.map(mov => (
+                    {filteredMovimentacoes.length > 0 ? (
+                        filteredMovimentacoes.map(mov => (
                             <tr key={mov.id} style={{ borderBottom: `1px solid ${theme.colors.gray200}` }}>
                                 <td style={{ padding: '12px 16px' }}>#{mov.id}</td>
                                 <td style={{ padding: '12px 16px' }}>{formatDate(mov.data_movimentacao)}</td>

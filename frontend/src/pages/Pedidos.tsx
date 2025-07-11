@@ -3,6 +3,7 @@ import api from '../lib/api';
 import { theme } from '../styles/theme';
 import { useNavigate } from 'react-router-dom';
 import { FaTruck, FaBoxOpen, FaWarehouse, FaFilePdf, FaFileExcel, FaPrint, FaEye } from 'react-icons/fa';
+import Select from 'react-select'; // Added import for react-select
 
 interface Pedido {
     id: number;
@@ -38,7 +39,29 @@ const Pedidos: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(true);
     const [error, setError] = useState<string | null>(null);
     const [updatingStatus, setUpdatingStatus] = useState<number | null>(null);
+
+    // === Filtro Status ===
+    const statusOptions = [
+        { value: 'TODOS', label: 'Todos' },
+        { value: 'AGUARDANDO_ENVIO', label: 'Aguardando Envio' },
+        { value: 'PEDIDO_REALIZADO', label: 'Pedido Realizado' },
+        { value: 'RECEBIDO', label: 'Recebido' },
+        { value: 'RECEBIDO_COM_DIVERGENCIA', label: 'Recebido com Divergência' },
+        { value: 'FINALIZADO', label: 'Finalizado' }
+    ];
+    const [selectedStatus, setSelectedStatus] = useState<{ value: string; label: string }>(statusOptions[0]);
     const navigate = useNavigate();
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const itemsPerPage = 10;
+
+    const filteredPedidos = selectedStatus.value === 'TODOS'
+        ? pedidos
+        : pedidos.filter(p => p.status === selectedStatus.value);
+
+    const indexOfLastItem = currentPage * itemsPerPage;
+    const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+    const displayedPedidos = filteredPedidos.slice(indexOfFirstItem, indexOfLastItem);
+    const totalPages = Math.ceil(filteredPedidos.length / itemsPerPage);
 
     const fetchPedidos = async () => {
         try {
@@ -171,6 +194,17 @@ const Pedidos: React.FC = () => {
 
     return (
         <div style={styles.container}>
+            {/* === Barra de filtros === */}
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '24px' }}>
+                <div style={{ minWidth: 220 }}>
+                    <Select
+                        options={statusOptions}
+                        value={selectedStatus}
+                        onChange={(opt) => { if(opt){ setSelectedStatus(opt); setCurrentPage(1);} }}
+                        placeholder="Filtrar por status"
+                    />
+                </div>
+            </div>
             <div style={styles.headerContainer}>
                 <h1 style={styles.header}>Pedidos de Compra</h1>
             </div>
@@ -187,8 +221,8 @@ const Pedidos: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {pedidos.length > 0 ? (
-                        pedidos.map(pedido => (
+                    {displayedPedidos.length > 0 ? (
+                        displayedPedidos.map(pedido => (
                             <tr key={pedido.id} style={styles.tr}>
                                 <td style={styles.td}>#{pedido.id}</td>
                                 <td style={styles.td}>{pedido.nome_fornecedor}</td>
@@ -209,6 +243,15 @@ const Pedidos: React.FC = () => {
                     )}
                 </tbody>
             </table>
+            {totalPages > 1 && (
+                <div style={styles.pagination}>
+                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} style={styles.pageButton}>Anterior</button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                        <button key={page} onClick={() => setCurrentPage(page)} style={page === currentPage ? styles.pageButtonActive : styles.pageButton}>{page}</button>
+                    ))}
+                    <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} style={styles.pageButton}>Próxima</button>
+                </div>
+            )}
         </div>
     );
 };
@@ -292,6 +335,23 @@ const styles: { [key: string]: React.CSSProperties } = {
         fontSize: '0.85rem',
         whiteSpace: 'nowrap',
         zIndex: 10,
+    },
+    pagination: {
+        marginTop: '16px',
+        display: 'flex',
+        gap: '4px',
+    },
+    pageButton: {
+        padding: '6px 12px',
+        border: `1px solid ${theme.colors.blueLight1}`,
+        background: '#fff',
+        cursor: 'pointer',
+    },
+    pageButtonActive: {
+        padding: '6px 12px',
+        border: `1px solid ${theme.colors.blueDark}`,
+        background: theme.colors.blueLight1,
+        cursor: 'pointer',
     },
 };
 

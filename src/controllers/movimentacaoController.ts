@@ -13,13 +13,13 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
         nf_data_emissao
     } = req.body;
     // itens_recebidos: [{ item_estoque_id: number, quantidade_recebida: number, valor_unitario_recebido: number, quantidade_pedida: number, valor_unitario_pedido: number }]
-    const usuario_id = (req as any).user?.id;
+  const usuario_id = (req as any).user?.id;
     const logPrefix = `[ENTRADA_PEDIDO_${pedido_compra_id}]`;
 
     if (!pedido_compra_id || !itens_recebidos || !Array.isArray(itens_recebidos) || itens_recebidos.length === 0) {
         res.status(400).json({ error: 'Campos obrigatórios: pedido_compra_id e uma lista de itens_recebidos.' });
-        return;
-    }
+    return;
+  }
 
     const client = await pool.connect();
     console.log(`${logPrefix} Usuário ${usuario_id} iniciando entrada em estoque.`);
@@ -40,11 +40,11 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
         }
 
         // Buscar filial vinculada ao pedido
-        const pedidoFilialRes = await pool.query('SELECT filial_id FROM pedido_compra WHERE id = $1', [pedido_compra_id]);
+        const pedidoFilialRes = await pool.query("SELECT filial_id FROM orcamento WHERE id = $1 AND tipo = 'PEDIDO'", [pedido_compra_id]);
         if (pedidoFilialRes.rows.length === 0) {
             res.status(400).json({ error: 'Pedido de compra não encontrado ou sem filial associada.' });
-            return;
-        }
+    return;
+  }
         const filialPedidoId = pedidoFilialRes.rows[0].filial_id;
 
         const movQuery = `
@@ -84,7 +84,10 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
                 }
                 console.log(`${logPrefix} Divergência registrada para o item ${item.item_estoque_id}.`);
             } else {
-                await client.query(`UPDATE item_estoque SET estoque_atual = estoque_atual + $1 WHERE id = $2;`, [item.quantidade_recebida, item.item_estoque_id]);
+                await client.query(`UPDATE item_estoque SET estoque_atual = estoque_atual + $1,
+                                      valor = COALESCE(valor, $3),
+                                      validade_valor = CASE WHEN COALESCE(valor,0)=0 THEN NOW() ELSE validade_valor END
+                                    WHERE id = $2;`, [item.quantidade_recebida, item.item_estoque_id, item.valor_unitario_recebido]);
 
                 // Se filial_id foi enviado, atualizar também estoque_filial
                 await client.query(`INSERT INTO estoque_filial (filial_id, item_id, quantidade)
@@ -109,6 +112,17 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
 
         await client.query('UPDATE movimentacao_estoque SET status = $1 WHERE id = $2', [finalMovStatus, movimentacaoId]);
         await client.query("UPDATE orcamento SET status = $1 WHERE id = $2 AND tipo = 'PEDIDO'", [finalPedidoStatus, pedido_compra_id]);
+
+        /* === Contas a Pagar === cria registro se não existir */
+        const cpExists = await client.query('SELECT 1 FROM contas_pagar WHERE pedido_id = $1', [pedido_compra_id]);
+        if(cpExists.rowCount === 0){
+          await client.query(`
+            INSERT INTO contas_pagar (requisicao_id, pedido_id, fornecedor_id, valor, data_vencimento)
+            SELECT r.id, o.id, o.id_fornecedor, o.valor_total, CURRENT_DATE + INTERVAL '30 days'
+              FROM orcamento o
+              JOIN requisicao r ON r.id = o.requisicao_id
+             WHERE o.id = $1`, [pedido_compra_id]);
+        }
         
         console.log(`${logPrefix} Status final da movimentação: ${finalMovStatus}. Status final do pedido: ${finalPedidoStatus}.`);
 
@@ -129,11 +143,11 @@ export const registrarEntradaPorPedido = async (req: Request, res: Response): Pr
     } finally {
         client.release();
         console.log(`${logPrefix} Conexão com o banco de dados liberada.`);
-    }
+  }
 };
 
 export const listarMovimentacoes = async (req: Request, res: Response): Promise<void> => {
-    try {
+  try {
         const query = `
             SELECT
                 m.id,
@@ -174,7 +188,7 @@ export const getMovimentacaoById = async (req: Request, res: Response): Promise<
                 o.id as pedido_id,
                 f.nome as nome_fornecedor
             FROM movimentacao_estoque m
-            LEFT JOIN usuario u ON m.usuario_id = u.id
+                 LEFT JOIN usuario u ON m.usuario_id = u.id
             LEFT JOIN orcamento o ON m.pedido_compra_id = o.id
             LEFT JOIN fornecedor f ON o.id_fornecedor = f.id
             WHERE m.id = $1;
@@ -270,7 +284,7 @@ export const registrarEntradaManual = async (req: Request, res: Response): Promi
         await client.query('BEGIN');
 
         const movRes = await client.query(`INSERT INTO movimentacao_estoque (tipo, filial_id, usuario_id, observacao, status)
-                                           VALUES ('ENTRADA_MANUAL', $1, $2, $3, 'CONCLUIDA') RETURNING id`,
+                                           VALUES ('ENTRADA', $1, $2, $3, 'CONCLUIDA') RETURNING id`,
                                            [filial_id, usuario_id, observacao]);
         const movimentacaoId = movRes.rows[0].id;
 
@@ -315,7 +329,7 @@ export const registrarSaidaManual = async (req: Request, res: Response): Promise
     try{
         await client.query('BEGIN');
         const mov = await client.query(`INSERT INTO movimentacao_estoque (tipo, filial_id, usuario_id, observacao, status)
-                                        VALUES ('SAIDA_MANUAL',$1,$2,$3,'CONCLUIDA') RETURNING id`,
+                                        VALUES ('SAIDA',$1,$2,$3,'CONCLUIDA') RETURNING id`,
                                         [filial_id,usuario_id,observacao]);
         const movimentacaoId = mov.rows[0].id;
 
@@ -363,7 +377,7 @@ export const registrarRemanejamentoEstoque = async (req: Request, res: Response)
     try{
         await client.query('BEGIN');
         const mov = await client.query(`INSERT INTO movimentacao_estoque (tipo, filial_id, usuario_id, observacao, status)
-                                         VALUES ('REMANEJO',$1,$2,$3,'CONCLUIDA') RETURNING id`,
+                                         VALUES ('AJUSTE_NEGATIVO',$1,$2,$3,'CONCLUIDA') RETURNING id`,
                                          [filial_origem_id,usuario_id,observacao]);
         const movimentacaoId = mov.rows[0].id;
 
@@ -394,8 +408,8 @@ export const registrarRemanejamentoEstoque = async (req: Request, res: Response)
     }catch(err:any){
         await client.query('ROLLBACK');
         console.error(logPrefix,err);
-        res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
     }finally{
         client.release();
-    }
-};
+  }
+}; 

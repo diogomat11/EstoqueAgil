@@ -4,7 +4,7 @@ import LibCurrencyInput from 'react-currency-input-field';
 import api from '../lib/api';
 import { theme } from '../styles/theme';
 import { useAuthProfile } from '../lib/useAuth';
-import { FaEye, FaPencilAlt, FaTrash } from 'react-icons/fa';
+import { FaEye, FaPencilAlt, FaTrash, FaInfoCircle } from 'react-icons/fa';
 
 // Componente wrapper para usar a biblioteca
 const CurrencyInput = ({ value, onChange, disabled }: { value: string, onChange: (value: string) => void, disabled?: boolean }) => {
@@ -38,6 +38,14 @@ interface ItemACotar {
     quantidade: number;
     descricao: string;
     codigo: string;
+}
+
+interface ItemStats {
+    consumo30: number;
+    compras30: number;
+    leadtime?: number | null;
+    leadtime_p95?: number | null;
+    ultimo_preco?: number | null;
 }
 
 interface Fornecedor {
@@ -94,7 +102,14 @@ const OrcamentoCotacao: React.FC = () => {
     const [status, setStatus] = useState('');
     const [fornecedoresCotacao, setFornecedoresCotacao] = useState<Fornecedor[]>([]);
     const [approvalDecisions, setApprovalDecisions] = useState<Record<number, ApprovalDecision>>({});
+    const [itemStats, setItemStats] = useState<Record<number, ItemStats>>({});
     const [isLoading, setIsLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState<number>(1);
+    const itemsPerPage = 10;
+    const indexOfLast = currentPage * itemsPerPage;
+    const indexOfFirst = indexOfLast - itemsPerPage;
+    const displayedOrcamentos = orcamentos.slice(indexOfFirst, indexOfLast);
+    const totalPages = Math.ceil(orcamentos.length / itemsPerPage);
     
     // Variáveis de permissão com verificação case-insensitive correta
     const canApprove = useMemo(() => {
@@ -192,6 +207,25 @@ const OrcamentoCotacao: React.FC = () => {
                     };
                 });
                 setApprovalDecisions(decisions);
+            }
+
+            // buscar stats para cada item
+            if(itens_a_cotar){
+              const promises = itens_a_cotar.map((it:ItemACotar)=>
+                   Promise.all([
+                     api.get('/compras/historico',{ params:{ item_id: it.item_id, meses:1 }}).then(res=>{
+                         const totalEntrada = res.data.rows.reduce((acc:any,row:any)=> acc + Number(row.total_entrada||0),0);
+                         const totalSaida   = res.data.rows.reduce((acc:any,row:any)=> acc + Number(row.total_saida||0),0);
+                         return { compras30: totalEntrada, consumo30: totalSaida };
+                     }).catch(()=>({compras30:0, consumo30:0})),
+                     api.get('/compras/leadtime',{ params:{ item_id: it.item_id, meses:12 }}).then(res=>({ leadtime: res.data.leadtime_medio_dias, leadtime_p95: res.data.p95 })).catch(()=>({leadtime:null, leadtime_p95:null})),
+                     api.get('/compras/ultimopreco',{ params:{ item_id: it.item_id }}).then(res=>({ ultimo_preco: res.data?.valor_unitario || null })).catch(()=>({ultimo_preco:null}))
+                   ]).then(([hist,lt,lp])=>({ id: it.item_id, stats:{ ...hist, ...lt, ...lp }}))
+              );
+              const statsArr = await Promise.all(promises);
+              const mapStats:Record<number,ItemStats> = {};
+              statsArr.forEach(r=> mapStats[r.id]=r.stats);
+              setItemStats(mapStats);
             }
 
         } catch (error) { 
@@ -406,7 +440,7 @@ const OrcamentoCotacao: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {orcamentos.map(orcamento => (
+                    {displayedOrcamentos.map(orcamento => (
                         <tr key={orcamento.id}>
                             <td style={styles.td}>{orcamento.id}</td>
                             <td style={styles.td}>{orcamento.requisicao_id}</td>
@@ -417,6 +451,15 @@ const OrcamentoCotacao: React.FC = () => {
                     ))}
                 </tbody>
             </table>
+            {totalPages>1 && (
+              <div style={styles.pagination}>
+                <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={currentPage===1} style={styles.pageBtn}>Anterior</button>
+                {Array.from({length: totalPages},(_,i)=>i+1).map(pn=>(
+                  <button key={pn} onClick={()=>setCurrentPage(pn)} style={pn===currentPage?styles.pageBtnActive:styles.pageBtn}>{pn}</button>
+                ))}
+                <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={currentPage===totalPages} style={styles.pageBtn}>Próxima</button>
+              </div>
+            )}
         </div>
     );
     
@@ -448,20 +491,32 @@ const OrcamentoCotacao: React.FC = () => {
                     </tr>
                 </thead>
                 <tbody>
-                    {itens.map(item => (
-                        <tr key={item.item_id}>
-                            <td style={{...styles.td, fontWeight: 'bold'}}>{item.descricao} ({item.codigo}) - Qtd: {item.quantidade}</td>
-                            {selectedFornecedores.map((fornecedorId, index) => (
-                                <td key={index} style={styles.td}>
-                                    <CurrencyInput
-                                        value={cotacoes[`${item.item_id}-${fornecedorId}`] || ''}
-                                        onChange={(v) => handleValorChange(item.item_id, fornecedorId, v)}
-                                    />
+                    {itens.map(item => {
+                        const stats = itemStats[item.item_id];
+                        const mediaConsumo = stats ? stats.consumo30 : null;
+                        const alerta = mediaConsumo !== null && item.quantidade > mediaConsumo*2; // exemplo regra
+                        return (
+                            <tr key={item.item_id} style={alerta ? { background:'#ffe6e6'}:{}}>
+                                <td style={styles.td}>{item.descricao} ({item.codigo}) - Qtd: {item.quantidade}</td>
+                                {selectedFornecedores.map((fornecedorId, index) => (
+                                    <td key={index} style={styles.td}>
+                                        <CurrencyInput
+                                            value={cotacoes[`${item.item_id}-${fornecedorId}`] || ''}
+                                            onChange={(v) => handleValorChange(item.item_id, fornecedorId, v)}
+                                        />
+                                    </td>
+                                ))}
+                                <td style={styles.tdCenter}>
+                                  {mediaConsumo !== null ? (
+                                    <Tooltip text={`Consumo 30d: ${mediaConsumo}\nCompras 30d: ${stats?.compras30 || 0}\nLead-time médio: ${stats?.leadtime ? stats.leadtime.toFixed(1)+'d' : 'n/d'} (p95 ${stats?.leadtime_p95 ? stats.leadtime_p95.toFixed(1)+'d':'-'})\nÚltimo preço: ${stats?.ultimo_preco ? 'R$ '+stats.ultimo_preco.toFixed(2) : 'n/d'}`}>
+                                      <FaInfoCircle color={alerta ? 'red':'gray'} />
+                                    </Tooltip>
+                                  ): '...'}
                                 </td>
-                            ))}
-                            <td style={styles.td}></td>
-                        </tr>
-                    ))}
+                                <td style={styles.td}></td>
+                            </tr>
+                        );
+                    })}
                 </tbody>
             </table>
             <div style={styles.actions}>
@@ -518,8 +573,12 @@ const OrcamentoCotacao: React.FC = () => {
                             const isRejected = decision.status === 'REPROVADO';
                             const showJustification = (isQtyChanged && decision.quantidade !== item.quantidade) || isRejected;
 
+                            const stats = itemStats[item.item_id];
+                            const mediaConsumo = stats ? stats.consumo30 : null;
+                            const alerta = mediaConsumo !== null && item.quantidade > mediaConsumo*2; // exemplo regra
+
                             return (
-                                <tr key={item.item_id}>
+                                <tr key={item.item_id} style={alerta ? { background:'#ffe6e6'}:{}}>
                                     <td style={styles.td}>{item.descricao}</td>
                                     <td style={styles.td}>{item.quantidade}</td>
                                     {fornecedoresCotacao.map(f => (
@@ -759,6 +818,9 @@ const styles: { [key: string]: React.CSSProperties } = {
         whiteSpace: 'nowrap',
         zIndex: 10,
     },
+    pagination:{ marginTop:16, display:'flex', gap:4 },
+    pageBtn:{ padding:'4px 10px', border:'1px solid #ccc', background:'#fff', cursor:'pointer' },
+    pageBtnActive:{ padding:'4px 10px', border:'1px solid', background: theme.colors.blueLight1 },
 };
 
 export default OrcamentoCotacao; 

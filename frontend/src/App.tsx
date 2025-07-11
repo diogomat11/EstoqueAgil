@@ -21,6 +21,8 @@ import MovimentarEstoque from './pages/MovimentarEstoque';
 import AlterarSenha from './pages/AlterarSenha';
 import api from './lib/api';
 import EstoqueVisaoGeral from './pages/EstoqueVisaoGeral';
+import ComprasAnalise from './pages/ComprasAnalise';
+import Financeiro from './pages/Financeiro';
 
 const useAuth = () => {
   const [user, setUser] = React.useState<any | undefined>(undefined);
@@ -73,10 +75,13 @@ const App: React.FC = () => {
                   <Route path="usuarios" element={<Usuarios />} />
                   <Route path="categorias" element={<Categorias />} />
                   <Route path="negociacoes" element={<Negociacoes />} />
+                  <Route path="compras-analise" element={<ComprasAnalise />} />
+                  <Route path="financeiro" element={<Financeiro />} />
                   <Route path="movimentacoes/entrada/:pedidoId" element={<ProtectedRoute><EntradaEstoque /></ProtectedRoute>} />
                   <Route path="movimentacoes/:id" element={<ProtectedRoute><MovimentacaoDetalhes /></ProtectedRoute>} />
                   <Route path="movimentacoes" element={<ProtectedRoute><Movimentacoes /></ProtectedRoute>} />
                   <Route path="movimentacoes/movimentar" element={<ProtectedRoute><MovimentarEstoque /></ProtectedRoute>} />
+                  <Route path="auditoria" element={<ProtectedRoute><Movimentacoes /></ProtectedRoute>} />
                   <Route path="dso" element={<DSO />} />
                   <Route path="alterar-senha" element={<AlterarSenha />} />
                   <Route path="estoque-visao-geral" element={<EstoqueVisaoGeral />} />

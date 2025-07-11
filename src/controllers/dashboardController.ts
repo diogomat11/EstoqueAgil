@@ -5,8 +5,8 @@ import { pool } from '../database';
 export const saldoEstoque = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
-      `SELECT codigo, descricao, estoque_atual, estoque_min,
-        CASE WHEN estoque_atual < estoque_min THEN true ELSE false END AS abaixo_minimo
+      `SELECT codigo, descricao, estoque_atual, estoque_minimo,
+        CASE WHEN estoque_atual < estoque_minimo THEN true ELSE false END AS abaixo_minimo
        FROM item_estoque
        ORDER BY descricao`
     );
@@ -22,11 +22,12 @@ export const itensMaisMovimentados = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT i.codigo, i.descricao,
-        SUM(CASE WHEN m.tipo = 'SAIDA' THEN m.quantidade ELSE 0 END) AS total_saida,
-        SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE 0 END) AS total_entrada
-       FROM movimentacao m
-       JOIN item_estoque i ON m.item_id = i.id
-       WHERE m.data >= NOW() - INTERVAL '${periodo || 30} days'
+        SUM(CASE WHEN me.tipo = 'SAIDA' THEN mi.quantidade_movimentada ELSE 0 END) AS total_saida,
+        SUM(CASE WHEN me.tipo = 'ENTRADA' THEN mi.quantidade_movimentada ELSE 0 END) AS total_entrada
+       FROM movimentacao_estoque_item mi
+       JOIN movimentacao_estoque me ON me.id = mi.movimentacao_id
+       JOIN item_estoque i ON mi.item_estoque_id = i.id
+       WHERE me.data_movimentacao >= NOW() - INTERVAL '${periodo || 30} days'
        GROUP BY i.codigo, i.descricao
        ORDER BY total_saida DESC
        LIMIT 10`
@@ -114,5 +115,32 @@ export const orcamentosPorPeriodo = async (req: Request, res: Response) => {
     res.json(result.rows);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+export const getKanbanCompras = async (req: Request, res: Response) => {
+  try {
+    const query = `
+      WITH d AS (
+        SELECT d.requisicao_id, d.etapa, d.status,
+               r.data_requisicao AS data, dr.usuario_id, u.nome as responsavel
+          FROM demanda d
+          JOIN requisicao r ON r.id = d.requisicao_id
+          LEFT JOIN demanda_responsavel dr ON dr.demanda_id = d.id
+          LEFT JOIN usuario u ON u.id = dr.usuario_id
+         WHERE d.status = 'EM_ANDAMENTO'
+      )
+      SELECT requisicao_id as id,
+             etapa       as tipo,
+             status,
+             data,
+             responsavel
+        FROM d
+        ORDER BY data DESC`;
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch(err:any){
+    console.error('[KANBAN] erro:',err);
+    res.status(500).json({error:err.message});
   }
 }; 

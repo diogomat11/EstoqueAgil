@@ -6,6 +6,7 @@ import {
     salvarCotacoes,
     atualizarStatusOrcamento,
     processarAprovacao,
+    reverterAprovacaoPedido,
     deleteOrcamento
 } from '../controllers/orcamentoController';
 import { authenticateJWT } from '../middlewares/authMiddleware';
@@ -31,6 +32,14 @@ router.post(
     authenticateJWT, 
     authorize(['SUPERVISOR', 'ADMINISTRADOR', 'ADMIN']), 
     processarAprovacao
+);
+
+// Rota para reverter a aprovação de um Pedido de Compra (antes do envio)
+router.post(
+    '/:id/reverter_aprovacao',
+    authenticateJWT,
+    authorize(['SUPERVISOR', 'ADMINISTRADOR', 'ADMIN']),
+    reverterAprovacaoPedido
 );
 
 export default router; 

@@ -45,6 +45,7 @@ export const getDemandas = async (req: Request, res: Response): Promise<void> =>
   try {
     const { rows } = await pool.query(
       `SELECT d.*, 
+              d.requisicao_id,
               json_agg(json_build_object('id', u.id, 'nome', u.nome)) AS responsaveis
        FROM demanda d
        LEFT JOIN demanda_responsavel dr ON dr.demanda_id = d.id

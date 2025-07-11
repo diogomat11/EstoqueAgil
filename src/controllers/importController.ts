@@ -93,7 +93,7 @@ export const importItens = async (req: Request, res: Response) => {
         for (const item of itens) {
           try {
             // Validação de campos obrigatórios para todos os itens
-            if (!item.codigo || !item.descricao || !item.tipo_unid || !item.estoque_min) {
+            if (!item.codigo || !item.descricao || !item.tipo_unid || !item.estoque_minimo) {
               continue;
             }
 
@@ -122,12 +122,12 @@ export const importItens = async (req: Request, res: Response) => {
             // Insert
             await pool.query(
               `INSERT INTO item_estoque
-                (codigo, descricao, tipo_unid, estoque_min, estoque_atual, valor, fornecedor_id, validade_negociacao, tipo_fornecedor_id)
+                (codigo, descricao, tipo_unid, estoque_minimo, estoque_atual, valor, fornecedor_id, validade_negociacao, tipo_fornecedor_id)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 ON CONFLICT (codigo) DO UPDATE SET
                   descricao=EXCLUDED.descricao,
                   tipo_unid=EXCLUDED.tipo_unid,
-                  estoque_min=EXCLUDED.estoque_min,
+                  estoque_minimo=EXCLUDED.estoque_minimo,
                   estoque_atual=EXCLUDED.estoque_atual,
                   valor=EXCLUDED.valor,
                   fornecedor_id=EXCLUDED.fornecedor_id,
@@ -138,7 +138,7 @@ export const importItens = async (req: Request, res: Response) => {
                 item.codigo,
                 item.descricao,
                 item.tipo_unid,
-                item.estoque_min === '' ? null : item.estoque_min,
+                item.estoque_minimo === '' ? null : item.estoque_minimo,
                 item.estoque_atual === '' ? null : item.estoque_atual,
                 item.valor === '' ? null : parseFloat(item.valor.replace(',', '.')),
                 item.fornecedor_id === '' ? null : item.fornecedor_id,
